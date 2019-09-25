@@ -1,3 +1,3 @@
 # CCFS
 
-Chop-Chop File System: A distrubuted, higly available file system.
+Chop-Chop File System: A distrubuted, highly available file system.
