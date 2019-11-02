@@ -158,16 +158,6 @@ struct Chunk {
 
   file_part_num: u16,
 }
-impl Chunk {
-  fn new(file_id: Uuid, server_id: Uuid, file_part_num: u16) -> Chunk {
-    Chunk {
-      id: Uuid::new_v4(),
-      file_id,
-      server_id,
-      file_part_num: file_part_num,
-    }
-  }
-}
 
 lazy_static! {
     // should be replaced with DB
@@ -188,7 +178,7 @@ fn get_servers() -> JsonValue {
     .iter()
     .map(|(_, server)| server.clone())
     .collect();
-  json!({ "available_servers": server_refs })
+  json!(server_refs)
 }
 
 #[derive(Debug)]
@@ -277,11 +267,7 @@ fn signal_chuck_upload_completed(chunk_info: Json<Chunk>) -> JsonValue {
   if let Some(file) = files_map.get_mut(&chunk_info.0.file_id) {
     // The creation of the chunk entity should be actually in the chunk
     // server api, but for it is also here for dev purpose
-    let chunk = Chunk::new(
-      chunk_info.0.file_id,
-      chunk_info.0.server_id,
-      chunk_info.0.file_part_num,
-    );
+    let chunk = chunk_info.into_inner();
     chunks_map.insert(chunk.id, chunk);
 
     file.num_of_completed_chunks = file.num_of_completed_chunks + 1;

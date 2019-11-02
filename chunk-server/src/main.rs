@@ -23,8 +23,8 @@ use std::path::PathBuf;
 use uuid::Uuid;
 
 use rocket_multipart_form_data::{
-  mime, FileField, MultipartFormData, MultipartFormDataField,
-  MultipartFormDataOptions, TextField,
+  MultipartFormData, MultipartFormDataField, MultipartFormDataOptions,
+  RawField, TextField,
 };
 
 const CHUNK_SIZE: u64 = 64000000;
@@ -94,11 +94,9 @@ fn multipart_upload(content_type: &ContentType, data: Data) -> JsonValue {
   }
   let mut options = MultipartFormDataOptions::new();
   options.temporary_dir = UPLOADS_DIR.to_path_buf();
-  options.allowed_fields.push(
-    MultipartFormDataField::file("file")
-      .content_type_by_string(Some(mime::IMAGE_STAR))
-      .unwrap(),
-  );
+  options
+    .allowed_fields
+    .push(MultipartFormDataField::raw("file"));
   options
     .allowed_fields
     .push(MultipartFormDataField::text("file_id"));
@@ -106,13 +104,13 @@ fn multipart_upload(content_type: &ContentType, data: Data) -> JsonValue {
     .allowed_fields
     .push(MultipartFormDataField::text("file_part_num"));
 
-  let mut multipart_form_data =
+  let multipart_form_data =
     MultipartFormData::parse(content_type, data, options).unwrap();
 
   // The file will be delete automatically when the MultipartFormData instance
   // is dropped. If you want to handle that file by your own, instead of
   // killing it, just remove it out from the MultipartFormData instance.
-  let file = multipart_form_data.files.remove("file");
+  let file = multipart_form_data.raw.get("file");
   let file_id_text = multipart_form_data.texts.get("file_id");
   let file_part_num_text = multipart_form_data.texts.get("file_part_num");
 
@@ -148,21 +146,31 @@ fn multipart_upload(content_type: &ContentType, data: Data) -> JsonValue {
 
   if let Some(file) = file {
     match file {
-      FileField::Single(file) => {
+      RawField::Single(file) => {
+        use std::io::Write;
         let _content_type = &file.content_type;
-        let path = &file.path;
-        let mut new_path = path.parent().unwrap().to_path_buf();
-        new_path.push(chunk.id.to_string());
+        let content = &file.raw;
 
-        fs::rename(path, new_path).unwrap();
+        let mut new_path = UPLOADS_DIR.to_path_buf();
+        new_path.push(chunk.id.to_string());
+        let mut f = File::create(new_path).unwrap();
+        f.write(&content).unwrap();
       }
-      FileField::Multiple(_files) => {
+      RawField::Multiple(_files) => {
         // Because we only put one "file" field to the allowed_fields,
         // this arm will not be matched.
       }
     }
   }
 
+  println!("{}", &chunk.id);
+  let _resp = reqwest::Client::new()
+    .post(
+      reqwest::Url::parse("http://localhost:8080/api/chunk/completed").unwrap(),
+    )
+    .json(&chunk)
+    .send()
+    .unwrap();
   json!(chunk)
 }
 
@@ -170,6 +178,7 @@ fn multipart_upload(content_type: &ContentType, data: Data) -> JsonValue {
 fn download(chunk_id: UuidRC) -> Option<Stream<File>> {
   let mut file_path = UPLOADS_DIR.to_path_buf();
   file_path.push(chunk_id.to_string());
+  println!("{}", file_path.as_path().to_str().unwrap().to_string());
   File::open(file_path).map(|file| Stream::from(file)).ok()
 }
 
