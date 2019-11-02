@@ -1,0 +1,84 @@
+version: '3.6'
+
+#
+# This a development environment. It is running:
+#
+#  - A metadata server on port 4000.
+#
+#  - A chunk sever on port 5001.
+#  - A chunk sever on port 5002.
+#  - A chunk sever on port 5003.
+#
+#  - And a CLI environment.
+#
+
+services:
+
+  meta_server:
+    build:
+      context: .
+      dockerfile: ./metadata-server/Dockerfile.dev
+
+    command: "bash -c 'cd metadata-server && cargo run'"
+    ports:
+      - "4000:8000"
+
+    volumes:
+      - ./ccfs-commons:/app/ccfs-commons
+      - ./metadata-server:/app/metadata-server
+
+  #
+  # Three chunk servers.
+  #
+
+  chunk_server_001:
+    build:
+      context: .
+      dockerfile: ./chunk-server/Dockerfile.dev
+
+    command: "bash -c 'cd chunk-server && cargo run'"
+    ports:
+      - "5001:8000"
+    volumes:
+      - ./ccfs-commons:/app/ccfs-commons
+      - ./chunk-server:/app/chunk-server
+
+  chunk_server_002:
+    build:
+      context: .
+      dockerfile: ./chunk-server/Dockerfile.dev
+
+    command: "bash -c 'cd chunk-server && cargo run'"
+    ports:
+      - "5002:8000"
+    volumes:
+      - ./ccfs-commons:/app/ccfs-commons
+      - ./chunk-server:/app/chunk-server
+
+  chunk_server_003:
+    build:
+      context: .
+      dockerfile: ./chunk-server/Dockerfile.dev
+
+    command: "bash -c 'cd chunk-server && cargo run'"
+    ports:
+      - "5003:8000"
+    volumes:
+      - ./ccfs-commons:/app/ccfs-commons
+      - ./chunk-server:/app/chunk-server
+
+  #
+  # CLI environment.
+  #
+
+  chunk_server_003:
+    build:
+      context: .
+      dockerfile: ./cli/Dockerfile.dev
+
+    command: "bash"
+    ports:
+      - "5003:4000"
+    volumes:
+      - ./ccfs-commons:/app/ccfs-commons
+      - ./cli:/app/cli
