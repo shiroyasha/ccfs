@@ -6,17 +6,18 @@ extern crate rocket;
 extern crate lazy_static;
 #[macro_use]
 extern crate rocket_contrib;
+extern crate ccfs_commons;
 extern crate dirs;
 extern crate mut_static;
 extern crate rocket_multipart_form_data;
 
+use ccfs_commons::Chunk;
 use mut_static::MutStatic;
 use rocket::http::ContentType;
 use rocket::response::Stream;
 use rocket::Data;
 use rocket_contrib::json::JsonValue;
 use rocket_contrib::uuid::Uuid as UuidRC;
-use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fs::{self, File};
 use std::path::PathBuf;
@@ -26,55 +27,6 @@ use rocket_multipart_form_data::{
   MultipartFormData, MultipartFormDataField, MultipartFormDataOptions,
   RawField, TextField,
 };
-
-const CHUNK_SIZE: u64 = 64000000;
-
-pub mod custom_uuid {
-  use serde::{de::Error, Deserialize, Deserializer, Serialize, Serializer};
-  use std::str::FromStr;
-  use uuid::Uuid;
-
-  pub fn serialize<'a, S>(
-    val: &'a Uuid,
-    serializer: S,
-  ) -> Result<S::Ok, S::Error>
-  where
-    S: Serializer,
-  {
-    val.to_string().serialize(serializer)
-  }
-
-  pub fn deserialize<'de, D>(deserializer: D) -> Result<Uuid, D::Error>
-  where
-    D: Deserializer<'de>,
-  {
-    let val: &str = Deserialize::deserialize(deserializer)?;
-    Uuid::from_str(val).map_err(D::Error::custom)
-  }
-}
-
-#[derive(Serialize, Deserialize, Clone, Copy)]
-struct Chunk {
-  #[serde(with = "custom_uuid")]
-  #[serde(default = "Uuid::nil")]
-  id: Uuid,
-  #[serde(with = "custom_uuid")]
-  file_id: Uuid,
-  #[serde(with = "custom_uuid")]
-  server_id: Uuid,
-
-  file_part_num: u16,
-}
-impl Chunk {
-  fn new(file_id: Uuid, server_id: Uuid, file_part_num: u16) -> Chunk {
-    Chunk {
-      id: Uuid::new_v4(),
-      file_id,
-      server_id,
-      file_part_num,
-    }
-  }
-}
 
 lazy_static! {
     // should be replaced with DB

@@ -1,114 +1,17 @@
 #![feature(proc_macro_hygiene, decl_macro)]
 
+extern crate ccfs_commons;
 extern crate clap;
 extern crate reqwest;
 
+use ccfs_commons::{Chunk, File, FileStatus, CHUNK_SIZE};
 use clap::{App, Arg, SubCommand};
 use reqwest::multipart::Part;
-use serde::{Deserialize, Serialize};
 use std::fs::File as FileFS;
 use std::io::prelude::*;
 use std::path::{Path, PathBuf};
 use std::str;
-use std::time::Instant;
 use uuid::Uuid;
-
-const CHUNK_SIZE: u64 = 64000000;
-
-mod custom_uuid {
-  use serde::{de::Error, Deserialize, Deserializer, Serialize, Serializer};
-  use std::str::FromStr;
-  use uuid::Uuid;
-
-  pub fn serialize<'a, S>(
-    val: &'a Uuid,
-    serializer: S,
-  ) -> Result<S::Ok, S::Error>
-  where
-    S: Serializer,
-  {
-    val.to_string().serialize(serializer)
-  }
-
-  pub fn deserialize<'de, D>(deserializer: D) -> Result<Uuid, D::Error>
-  where
-    D: Deserializer<'de>,
-  {
-    let val: &str = Deserialize::deserialize(deserializer)?;
-    Uuid::from_str(val).map_err(D::Error::custom)
-  }
-}
-
-mod custom_instant {
-  use serde::{Deserializer, Serialize, Serializer};
-  use std::time::Instant;
-
-  pub fn serialize<S>(_val: &Instant, serializer: S) -> Result<S::Ok, S::Error>
-  where
-    S: Serializer,
-  {
-    "".to_string().serialize(serializer)
-  }
-
-  pub fn deserialize<'de, D>(_deserializer: D) -> Result<Instant, D::Error>
-  where
-    D: Deserializer<'de>,
-  {
-    Ok(Instant::now())
-  }
-}
-
-#[derive(Clone, Serialize, Deserialize, Debug, Copy)]
-struct ChunkServer {
-  #[serde(with = "custom_uuid")]
-  #[serde(default = "Uuid::nil")]
-  id: Uuid,
-  // #[serde(with = "custom_string")]
-  // address: String,
-  is_active: bool,
-  #[serde(with = "custom_instant")]
-  latest_ping_time: Instant,
-}
-
-#[derive(Debug, Serialize, Deserialize, Clone, Copy)]
-enum FileStatus {
-  Started,
-  Completed,
-  Canceled,
-}
-impl FileStatus {
-  fn init() -> Self {
-    FileStatus::Started
-  }
-}
-
-#[derive(Serialize, Deserialize, Debug, Clone, Copy)]
-struct File {
-  #[serde(with = "custom_uuid")]
-  #[serde(default = "Uuid::nil")]
-  id: Uuid,
-  // #[serde(with = "custom_string")]
-  // name: String,
-  size: u64,
-  num_of_chunks: u16,
-  #[serde(default)]
-  num_of_completed_chunks: u16,
-  #[serde(default = "FileStatus::init")]
-  status: FileStatus,
-}
-
-#[derive(Serialize, Deserialize, Clone, Debug)]
-struct Chunk {
-  #[serde(with = "custom_uuid")]
-  #[serde(default = "Uuid::nil")]
-  id: Uuid,
-  #[serde(with = "custom_uuid")]
-  file_id: Uuid,
-  #[serde(with = "custom_uuid")]
-  server_id: Uuid,
-
-  file_part_num: u16,
-}
 
 fn main() {
   let matches = App::new("Chop-Chop File System")
@@ -173,7 +76,7 @@ fn main() {
       path = path_buf.as_path();
     }
     download(client, file_id, path)
-  } else if let Some(ref matches) = matches.subcommand_matches("remove") {
+  } else if let Some(ref _matches) = matches.subcommand_matches("remove") {
     println!("Not implemented yet :(")
   } else {
     println!("Some other subcommand was used")
@@ -271,7 +174,6 @@ fn download(client: reqwest::Client, file_id: &str, path: &Path) {
       chunks.sort_by(|a, b| a.file_part_num.cmp(&b.file_part_num));
       let mut file = FileFS::create(path).unwrap();
       for chunk in chunks.iter() {
-        println!("{:?}", chunk);
         let mut resp = client
           .get(
             reqwest::Url::parse(

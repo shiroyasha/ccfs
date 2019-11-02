@@ -6,158 +6,16 @@ extern crate rocket;
 extern crate lazy_static;
 #[macro_use]
 extern crate rocket_contrib;
+extern crate ccfs_commons;
 extern crate mut_static;
 
+use ccfs_commons::{Chunk, ChunkServer, File, FileStatus};
 use mut_static::MutStatic;
-use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
-use std::time::Instant;
-
-use rocket::http::Status;
-use rocket::request::{self, FromRequest, Request};
-use rocket::Outcome;
 use rocket_contrib::json::{Json, JsonValue};
 use rocket_contrib::uuid::Uuid as UuidRC;
+use std::collections::HashMap;
+use std::time::Instant;
 use uuid::Uuid;
-
-const CHUNK_SIZE: u64 = 64000000;
-
-mod custom_uuid {
-  use serde::{de::Error, Deserialize, Deserializer, Serialize, Serializer};
-  use std::str::FromStr;
-  use uuid::Uuid;
-
-  pub fn serialize<'a, S>(
-    val: &'a Uuid,
-    serializer: S,
-  ) -> Result<S::Ok, S::Error>
-  where
-    S: Serializer,
-  {
-    val.to_string().serialize(serializer)
-  }
-
-  pub fn deserialize<'de, D>(deserializer: D) -> Result<Uuid, D::Error>
-  where
-    D: Deserializer<'de>,
-  {
-    let val: &str = Deserialize::deserialize(deserializer)?;
-    Uuid::from_str(val).map_err(D::Error::custom)
-  }
-}
-
-// mod custom_string {
-//     use serde::{Deserialize, Deserializer, Serialize, Serializer};
-
-//     pub fn serialize<'a, S>(val: &'a str, serializer: S)
-//          -> Result<S::Ok, S::Error>
-//     where
-//         S: Serializer,
-//     {
-//         val.to_string().serialize(serializer)
-//     }
-
-//     pub fn deserialize<'de, D>(deserializer: D) -> Result<String, D::Error>
-//     where
-//         D: Deserializer<'de>,
-//     {
-//         let val: &str = Deserialize::deserialize(deserializer)?;
-//         Ok(val.to_string())
-//     }
-// }
-
-mod custom_instant {
-  use serde::{Deserializer, Serialize, Serializer};
-  use std::time::Instant;
-
-  pub fn serialize<S>(_val: &Instant, serializer: S) -> Result<S::Ok, S::Error>
-  where
-    S: Serializer,
-  {
-    "".to_string().serialize(serializer)
-  }
-
-  pub fn deserialize<'de, D>(_deserializer: D) -> Result<Instant, D::Error>
-  where
-    D: Deserializer<'de>,
-  {
-    Ok(Instant::now())
-  }
-}
-
-#[derive(Clone, Serialize, Deserialize, Debug, Copy)]
-struct ChunkServer {
-  #[serde(with = "custom_uuid")]
-  #[serde(default = "Uuid::nil")]
-  id: Uuid,
-  // #[serde(with = "custom_string")]
-  // address: String,
-  is_active: bool,
-  #[serde(with = "custom_instant")]
-  latest_ping_time: Instant,
-}
-impl ChunkServer {
-  fn new(id: Uuid /* , address: String */) -> ChunkServer {
-    ChunkServer {
-      id,
-      // address,
-      is_active: true,
-      latest_ping_time: Instant::now(),
-    }
-  }
-}
-
-#[derive(Debug, Serialize, Deserialize, Clone, Copy)]
-enum FileStatus {
-  Started,
-  Completed,
-  Canceled,
-}
-impl FileStatus {
-  fn init() -> Self {
-    FileStatus::Started
-  }
-}
-
-#[derive(Serialize, Deserialize, Debug, Clone, Copy)]
-struct File {
-  #[serde(with = "custom_uuid")]
-  #[serde(default = "Uuid::nil")]
-  id: Uuid,
-  // #[serde(with = "custom_string")]
-  // name: String,
-  size: u64,
-  num_of_chunks: u16,
-  #[serde(default)]
-  num_of_completed_chunks: u16,
-  #[serde(default = "FileStatus::init")]
-  status: FileStatus,
-}
-impl File {
-  fn new(/* name: String,  */ size: u64) -> File {
-    File {
-      id: Uuid::new_v4(),
-      // name,
-      size,
-      num_of_chunks: (size / CHUNK_SIZE + 1) as u16,
-      num_of_completed_chunks: 0,
-      status: FileStatus::Started,
-    }
-  }
-}
-
-#[derive(Serialize, Deserialize, Clone)]
-struct Chunk {
-  #[serde(with = "custom_uuid")]
-  #[serde(default = "Uuid::nil")]
-  id: Uuid,
-  #[serde(with = "custom_uuid")]
-  file_id: Uuid,
-  #[serde(with = "custom_uuid")]
-  server_id: Uuid,
-
-  file_part_num: u16,
-}
 
 lazy_static! {
     // should be replaced with DB
@@ -179,35 +37,6 @@ fn get_servers() -> JsonValue {
     .map(|(_, server)| server.clone())
     .collect();
   json!(server_refs)
-}
-
-#[derive(Debug)]
-enum HeaderError {
-  Missing,
-  Invalid,
-}
-
-impl<'a, 'r> FromRequest<'a, 'r> for ChunkServer {
-  type Error = HeaderError;
-
-  fn from_request(
-    request: &'a Request<'r>,
-  ) -> request::Outcome<Self, Self::Error> {
-    let id_header: Vec<_> =
-      request.headers().get("x-chunk-server-id").collect();
-    let address_header: Vec<_> =
-      request.headers().get("x-chunk-server-address").collect();
-    if id_header.len() == 0 || address_header.len() == 0 {
-      return Outcome::Failure((Status::BadRequest, HeaderError::Missing));
-    }
-    let parsed_id = Uuid::parse_str(&id_header.concat());
-    match parsed_id {
-      Ok(id) => Outcome::Success(ChunkServer::new(
-        id, /* , address_header.concat() */
-      )),
-      _ => Outcome::Failure((Status::BadRequest, HeaderError::Invalid)),
-    }
-  }
 }
 
 #[post("/ping")]
