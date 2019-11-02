@@ -1,11 +1,25 @@
-SHELL := /bin/bash
+.PHONY: dev.run
 PROJECT_DIR = $(shell pwd)
 
-start-ms:
-	ROCKET_PORT=8080 cargo run --manifest-path ./metadata-server/Cargo.toml
+#
+# Installs the dependencies and prepares the development environment.
+#
+dev.setup:
+	docker-compose build
+	docker-compose run meta_server      bash -c 'cd /app/metadata-server && cargo install --path .'
+	docker-compose run chunk_server_001 bash -c 'cd /app/chunk-server && cargo install --path .'
+	docker-compose run chunk_server_002 bash -c 'cd /app/chunk-server && cargo install --path .'
+	docker-compose run chunk_server_003 bash -c 'cd /app/chunk-server && cargo install --path .'
+	docker-compose run cli              bash -c 'cd /app/cli && cargo install --path .'
 
-start-cs:
-	METADATA_URL=http://localhost:8080 cargo run --manifest-path ./chunk-server/Cargo.toml
+#
+# Spins up a development environment with a metadata server and 3 chunk servers.
+#
+dev.run:
+	docker-compose up
 
-ccfs-cli:
-	cargo run --manifest-path $(PROJECT_DIR)/cli/Cargo.toml -- -c cli/cli_config.yaml $(filter-out $@,$(MAKECMDGOALS))
+#
+# Enters the environment that has a running CLI.
+#
+dev.cli:
+	docker-compose exec cli
