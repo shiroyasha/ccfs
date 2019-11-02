@@ -43,26 +43,6 @@ pub mod custom_instant {
   }
 }
 
-// mod custom_string {
-//     use serde::{Deserialize, Deserializer, Serialize, Serializer};
-
-//     pub fn serialize<'a, S>(val: &'a str, serializer: S)
-//          -> Result<S::Ok, S::Error>
-//     where
-//         S: Serializer,
-//     {
-//         val.to_string().serialize(serializer)
-//     }
-
-//     pub fn deserialize<'de, D>(deserializer: D) -> Result<String, D::Error>
-//     where
-//         D: Deserializer<'de>,
-//     {
-//         let val: &str = Deserialize::deserialize(deserializer)?;
-//         Ok(val.to_string())
-//     }
-// }
-
 use rocket::http::Status;
 use rocket::request::{self, FromRequest, Request};
 use rocket::Outcome;
@@ -70,22 +50,23 @@ use serde::{Deserialize, Serialize};
 use std::time::Instant;
 use uuid::Uuid;
 
-#[derive(Clone, Serialize, Deserialize, Debug, Copy)]
+#[derive(Clone, Serialize, Deserialize, Debug)]
 pub struct ChunkServer {
   #[serde(with = "custom_uuid")]
   #[serde(default = "Uuid::nil")]
   pub id: Uuid,
-  // #[serde(with = "custom_string")]
-  // address: String,
+  pub address: String,
   pub is_active: bool,
   #[serde(with = "custom_instant")]
+  #[serde(skip_deserializing)]
+  #[serde(default = "Instant::now")]
   pub latest_ping_time: Instant,
 }
 impl ChunkServer {
-  pub fn new(id: Uuid /* , address: String */) -> ChunkServer {
+  pub fn new(id: Uuid, address: String) -> ChunkServer {
     ChunkServer {
       id,
-      // address,
+      address,
       is_active: true,
       latest_ping_time: Instant::now(),
     }
@@ -113,9 +94,7 @@ impl<'a, 'r> FromRequest<'a, 'r> for ChunkServer {
     }
     let parsed_id = Uuid::parse_str(&id_header.concat());
     match parsed_id {
-      Ok(id) => Outcome::Success(ChunkServer::new(
-        id, /* , address_header.concat() */
-      )),
+      Ok(id) => Outcome::Success(ChunkServer::new(id, address_header.concat())),
       _ => Outcome::Failure((Status::BadRequest, HeaderError::Invalid)),
     }
   }
@@ -133,13 +112,12 @@ impl FileStatus {
   }
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone, Copy)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct File {
   #[serde(with = "custom_uuid")]
   #[serde(default = "Uuid::nil")]
   pub id: Uuid,
-  // #[serde(with = "custom_string")]
-  // name: String,
+  pub name: String,
   pub size: u64,
   pub num_of_chunks: u16,
   #[serde(default)]
@@ -148,10 +126,10 @@ pub struct File {
   pub status: FileStatus,
 }
 impl File {
-  pub fn new(/* name: String,  */ size: u64) -> File {
+  pub fn new(name: String, size: u64) -> File {
     File {
       id: Uuid::new_v4(),
-      // name,
+      name,
       size,
       num_of_chunks: (size / CHUNK_SIZE + 1) as u16,
       num_of_completed_chunks: 0,

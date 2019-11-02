@@ -39,50 +39,64 @@ fn get_servers() -> JsonValue {
   json!(server_refs)
 }
 
+#[get("/servers/<id>")]
+fn get_server(id: UuidRC) -> JsonValue {
+  // Returns a list of available chunk servers where the file chunks
+  // can be uploaded
+  let servers_map = CHUNK_SERVERS.read().unwrap();
+  if let Some(server) = servers_map.get(&id) {
+    json!(server)
+  } else {
+    json!({
+      "status": "error",
+        "reason": format!(
+            "Could not find server with ID {}", id
+        )
+    })
+  }
+}
+
 #[post("/ping")]
-fn chunk_server_ping(header_info: ChunkServer) -> Json<ChunkServer> {
+fn chunk_server_ping(header_info: ChunkServer) -> JsonValue {
   // Registers a chunk server as active, or updates the latest_ping_time
   // if the map already contains it
   let server_id = header_info.id;
-  // let server_addr = header_info.address;
+  let server_addr = header_info.address;
 
   let mut servers_map = CHUNK_SERVERS.write().unwrap();
   let chunk_server;
   if let Some(server) = servers_map.get_mut(&server_id) {
     server.latest_ping_time = Instant::now();
-    chunk_server = *server;
+    json!(*server)
   } else {
-    chunk_server = ChunkServer::new(
-      server_id,
-      // String::from(server_addr.to_string()),
-    );
+    chunk_server =
+      ChunkServer::new(server_id, String::from(server_addr.to_string()));
+    let resp = json!(chunk_server);
     servers_map.insert(server_id, chunk_server);
+    resp
   }
-  Json(chunk_server)
 }
 
 #[post("/files/upload", format = "json", data = "<file_info>")]
-fn create_file(file_info: Json<File>) -> Json<File> {
+fn create_file(file_info: Json<File>) -> JsonValue {
   // Creates a file entity with basic file info
-  // let name = file_info.0.name;
+  let name = file_info.0.name;
   let size = file_info.0.size;
-  let file = File::new(
-    // name,
-    size,
-  );
+  let file = File::new(name, size);
+  let resp = json!(file);
   let mut files_map = FILES.write().unwrap();
   files_map.insert(file.id, file);
 
-  Json(file)
+  resp
 }
 
 #[get("/files/<id>")]
-fn get_file(id: UuidRC) -> Json<File> {
+fn get_file(id: UuidRC) -> JsonValue {
   // Returns the file info
   let files_map = FILES.read().unwrap();
   let file = files_map.get(&id);
 
-  Json(*file.unwrap())
+  json!(*file.unwrap())
 }
 
 #[post("/chunk/completed", format = "json", data = "<chunk_info>")]
@@ -142,6 +156,7 @@ fn rocket() -> rocket::Rocket {
       "/api",
       routes![
         get_servers,
+        get_server,
         chunk_server_ping,
         create_file,
         signal_chuck_upload_completed,
