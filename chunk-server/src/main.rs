@@ -18,17 +18,16 @@ use rocket::response::Stream;
 use rocket::Data;
 use rocket_contrib::json::JsonValue;
 use rocket_contrib::uuid::Uuid as UuidRC;
+use rocket_multipart_form_data::{
+  MultipartFormData, MultipartFormDataField, MultipartFormDataOptions,
+  RawField, TextField,
+};
 use std::collections::HashMap;
 use std::env;
 use std::fs::{self, File};
 use std::path::PathBuf;
 use std::{thread, time};
 use uuid::Uuid;
-
-use rocket_multipart_form_data::{
-  MultipartFormData, MultipartFormDataField, MultipartFormDataOptions,
-  RawField, TextField,
-};
 
 const METADATA_URL_KEY: &str = "METADATA_URL";
 const SERVER_ADDRESS_KEY: &str = "SERVER_ADDRESS";
@@ -135,7 +134,6 @@ fn multipart_upload(content_type: &ContentType, data: Data) -> JsonValue {
 fn download(chunk_id: UuidRC) -> Option<Stream<File>> {
   let mut file_path = UPLOADS_DIR.to_path_buf();
   file_path.push(chunk_id.to_string());
-  println!("{}", file_path.as_path().to_str().unwrap().to_string());
   File::open(file_path).map(|file| Stream::from(file)).ok()
 }
 
@@ -159,8 +157,7 @@ fn start_ping_job(address: String) {
       )
       .header("x-chunk-server-id", ID.to_string())
       .header("x-chunk-server-address", &address)
-      .send()
-      .unwrap();
+      .send();
     thread::sleep(time::Duration::from_millis(5000))
   });
 }
@@ -182,7 +179,6 @@ fn main() {
         rocket_instance.config().address,
         rocket_instance.config().port
       );
-      println!("starting ping");
       start_ping_job(server_addr);
 
       rocket_instance.launch();

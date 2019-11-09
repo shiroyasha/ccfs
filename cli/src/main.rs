@@ -77,11 +77,9 @@ fn main() {
   let config_map: HashMap<String, String> =
     serde_yaml::from_reader(config_file).unwrap();
   let meta_server_url = config_map.get("metadata-server-url").unwrap();
-  println!("{:?}", meta_server_url);
   let client = reqwest::Client::new();
 
   if let Some(ref matches) = matches.subcommand_matches("upload") {
-    println!("matches {:?}", matches.value_of("file_path"));
     upload(
       &meta_server_url,
       client,
@@ -114,7 +112,6 @@ fn main() {
 
 fn upload(meta_server_url: &str, client: reqwest::Client, path: &str) {
   let file_path = Path::new(path);
-  println!("upload");
   if file_path.exists() {
     let size = file_path.metadata().unwrap().len();
     let file_data = File {
@@ -136,7 +133,6 @@ fn upload(meta_server_url: &str, client: reqwest::Client, path: &str) {
       .send()
       .unwrap()
       .json();
-    println!("{:?}", servers_resp);
     if !servers_resp.is_ok() {
       return println!("There are no available servers at the moment");
     } else {
@@ -203,7 +199,6 @@ fn download(
     .unwrap()
     .json();
   if let Ok(file) = file_resp {
-    println!("{}", &file.id);
     let chunks_resp: Result<Vec<Chunk>, _> = client
       .get(
         reqwest::Url::parse(
@@ -215,7 +210,6 @@ fn download(
       .unwrap()
       .json();
     if let Ok(mut chunks) = chunks_resp {
-      println!("{}", chunks.len());
       chunks.sort_by(|a, b| a.file_part_num.cmp(&b.file_part_num));
       let mut file = FileFS::create(path).unwrap();
       for chunk in chunks.iter() {
@@ -244,9 +238,11 @@ fn download(
             )
             .send()
             .unwrap();
-          let mut buf: Vec<u8> = vec![];
-          resp.copy_to(&mut buf).unwrap();
-          file.write(&buf).unwrap();
+          if resp.status().is_success() {
+            let mut buf: Vec<u8> = vec![];
+            resp.copy_to(&mut buf).unwrap();
+            file.write(&buf).unwrap();
+          }
         }
       }
     }
