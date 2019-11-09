@@ -18,15 +18,19 @@ use rocket::response::Stream;
 use rocket::Data;
 use rocket_contrib::json::JsonValue;
 use rocket_contrib::uuid::Uuid as UuidRC;
-use std::collections::HashMap;
-use std::fs::{self, File};
-use std::path::PathBuf;
-use uuid::Uuid;
-
 use rocket_multipart_form_data::{
   MultipartFormData, MultipartFormDataField, MultipartFormDataOptions,
   RawField, TextField,
 };
+use std::collections::HashMap;
+use std::env;
+use std::fs::{self, File};
+use std::path::PathBuf;
+use std::{thread, time};
+use uuid::Uuid;
+
+const METADATA_URL_KEY: &str = "METADATA_URL";
+const SERVER_ADDRESS_KEY: &str = "SERVER_ADDRESS";
 
 lazy_static! {
     // should be replaced with DB
@@ -59,9 +63,6 @@ fn multipart_upload(content_type: &ContentType, data: Data) -> JsonValue {
   let multipart_form_data =
     MultipartFormData::parse(content_type, data, options).unwrap();
 
-  // The file will be delete automatically when the MultipartFormData instance
-  // is dropped. If you want to handle that file by your own, instead of
-  // killing it, just remove it out from the MultipartFormData instance.
   let file = multipart_form_data.raw.get("file");
   let file_id_text = multipart_form_data.texts.get("file_id");
   let file_part_num_text = multipart_form_data.texts.get("file_part_num");
@@ -115,10 +116,13 @@ fn multipart_upload(content_type: &ContentType, data: Data) -> JsonValue {
     }
   }
 
-  println!("{}", &chunk.id);
+  let metadata_server_url = env::var(METADATA_URL_KEY).unwrap();
   let _resp = reqwest::Client::new()
     .post(
-      reqwest::Url::parse("http://localhost:8080/api/chunk/completed").unwrap(),
+      reqwest::Url::parse(
+        format!("{}/api/chunk/completed", metadata_server_url).as_str(),
+      )
+      .unwrap(),
     )
     .json(&chunk)
     .send()
@@ -130,7 +134,6 @@ fn multipart_upload(content_type: &ContentType, data: Data) -> JsonValue {
 fn download(chunk_id: UuidRC) -> Option<Stream<File>> {
   let mut file_path = UPLOADS_DIR.to_path_buf();
   file_path.push(chunk_id.to_string());
-  println!("{}", file_path.as_path().to_str().unwrap().to_string());
   File::open(file_path).map(|file| Stream::from(file)).ok()
 }
 
@@ -142,6 +145,23 @@ fn not_found() -> JsonValue {
   })
 }
 
+fn start_ping_job(address: String) {
+  thread::spawn(move || loop {
+    let metadata_server_url = env::var(METADATA_URL_KEY).unwrap();
+    let _resp = reqwest::Client::new()
+      .post(
+        reqwest::Url::parse(
+          format!("{}/api/ping", metadata_server_url).as_str(),
+        )
+        .unwrap(),
+      )
+      .header("x-chunk-server-id", ID.to_string())
+      .header("x-chunk-server-address", &address)
+      .send();
+    thread::sleep(time::Duration::from_millis(5000))
+  });
+}
+
 fn rocket() -> rocket::Rocket {
   rocket::ignite()
     .mount("/api", routes![multipart_upload, download])
@@ -151,5 +171,20 @@ fn rocket() -> rocket::Rocket {
 fn main() {
   CHUNKS.set(HashMap::new()).unwrap();
 
-  rocket().launch();
+  match env::var(METADATA_URL_KEY) {
+    Ok(_) => {
+      let rocket_instance = rocket();
+      let server_addr = format!(
+        "http://{}:{}",
+        rocket_instance.config().address,
+        rocket_instance.config().port
+      );
+      start_ping_job(server_addr);
+
+      rocket_instance.launch();
+    }
+    Err(_) => {
+      println!("missing {} env variable", METADATA_URL_KEY);
+    }
+  }
 }
