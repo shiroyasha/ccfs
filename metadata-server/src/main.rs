@@ -47,11 +47,10 @@ fn get_server(id: UuidRC) -> JsonValue {
   if let Some(server) = servers_map.get(&id) {
     json!(server)
   } else {
+    let reason = format!("Could not find server with ID {}", id);
     json!({
       "status": "error",
-        "reason": format!(
-            "Could not find server with ID {}", id
-        )
+      "reason": reason
     })
   }
 }
@@ -119,11 +118,11 @@ fn signal_chuck_upload_completed(chunk_info: Json<Chunk>) -> JsonValue {
     }
     json!(file)
   } else {
+    let reason =
+      format!("Could not find file with ID {}", chunk_info.0.file_id);
     json!({
         "status": "error",
-        "reason": format!(
-            "Could not find file with ID {}", chunk_info.0.file_id
-        )
+        "reason": reason
     })
   }
 }
