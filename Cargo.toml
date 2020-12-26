@@ -1,0 +1,3 @@
+[workspace]
+
+members = ["ccfs-commons", "chunk-server", "cli", "metadata-server"]
