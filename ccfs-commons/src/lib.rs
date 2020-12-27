@@ -1,16 +1,12 @@
+use chrono::{DateTime, Utc};
 use rocket::http::Status;
 use rocket::outcome::Outcome::*;
 use rocket::request::{self, FromRequest, Request};
 use rocket_contrib::uuid::{uuid_crate, Uuid};
 use serde::{Deserialize, Serialize};
 use std::str::FromStr;
-use std::time::Instant;
 
 pub const CHUNK_SIZE: u64 = 64000000;
-
-pub fn init_value() -> Uuid {
-    Uuid::from_str("").unwrap()
-}
 
 pub mod custom_uuid {
     use rocket_contrib::uuid::Uuid;
@@ -27,30 +23,33 @@ pub mod custom_uuid {
     }
 }
 
-pub mod custom_instant {
-    use serde::{Deserializer, Serialize, Serializer};
-    use std::time::Instant;
+pub mod custom_time {
+    use chrono::{DateTime, NaiveDateTime, Utc};
+    use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
-    pub fn serialize<S: Serializer>(_val: &Instant, serializer: S) -> Result<S::Ok, S::Error> {
-        "".to_string().serialize(serializer)
+    pub fn serialize<S: Serializer>(val: &DateTime<Utc>, serializer: S) -> Result<S::Ok, S::Error> {
+        val.timestamp().to_string().serialize(serializer)
     }
 
-    pub fn deserialize<'de, D: Deserializer<'de>>(_deserializer: D) -> Result<Instant, D::Error> {
-        Ok(Instant::now())
+    pub fn deserialize<'de, D: Deserializer<'de>>(
+        deserializer: D,
+    ) -> Result<DateTime<Utc>, D::Error> {
+        let s = String::deserialize(deserializer)?
+            .parse()
+            .map_err(serde::de::Error::custom)?;
+        Ok(DateTime::from_utc(NaiveDateTime::from_timestamp(s, 0), Utc))
     }
 }
 
 #[derive(Clone, Serialize, Deserialize, Debug)]
 pub struct ChunkServer {
     #[serde(with = "custom_uuid")]
-    #[serde(default = "init_value")]
     pub id: Uuid,
     pub address: String,
     pub is_active: bool,
-    #[serde(with = "custom_instant")]
-    #[serde(skip_deserializing)]
-    #[serde(default = "Instant::now")]
-    pub latest_ping_time: Instant,
+    #[serde(with = "custom_time")]
+    // #[serde(default = "")]
+    pub latest_ping_time: DateTime<Utc>,
 }
 impl ChunkServer {
     pub fn new(id: Uuid, address: String) -> ChunkServer {
@@ -58,7 +57,7 @@ impl ChunkServer {
             id,
             address,
             is_active: true,
-            latest_ping_time: Instant::now(),
+            latest_ping_time: DateTime::from_utc(Utc::now().naive_utc(), Utc),
         }
     }
 }
@@ -104,7 +103,6 @@ impl FileStatus {
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct File {
     #[serde(with = "custom_uuid")]
-    #[serde(default = "init_value")]
     pub id: Uuid,
     pub name: String,
     pub size: u64,
@@ -117,7 +115,7 @@ pub struct File {
 impl File {
     pub fn new(name: String, size: u64) -> File {
         File {
-            id: Uuid::from_str(uuid_crate::Uuid::new_v4().to_string().as_str()).unwrap(),
+            id: Uuid::from_str(&uuid_crate::Uuid::new_v4().to_string()).unwrap(),
             name,
             size,
             num_of_chunks: (size / CHUNK_SIZE + 1) as u16,
@@ -130,7 +128,6 @@ impl File {
 #[derive(Serialize, Deserialize, Clone, Copy)]
 pub struct Chunk {
     #[serde(with = "custom_uuid")]
-    #[serde(default = "init_value")]
     pub id: Uuid,
     #[serde(with = "custom_uuid")]
     pub file_id: Uuid,
@@ -141,7 +138,7 @@ pub struct Chunk {
 impl Chunk {
     pub fn new(file_id: Uuid, server_id: Uuid, file_part_num: u16) -> Chunk {
         Chunk {
-            id: Uuid::from_str(uuid_crate::Uuid::new_v4().to_string().as_str()).unwrap(),
+            id: Uuid::from_str(&uuid_crate::Uuid::new_v4().to_string()).unwrap(),
             file_id,
             server_id,
             file_part_num,
