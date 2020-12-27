@@ -9,16 +9,18 @@ extern crate dirs;
 extern crate mut_static;
 extern crate rocket_multipart_form_data;
 
-use ccfs_commons::{init_value, Chunk};
+use ccfs_commons::Chunk;
 use rocket::data::ToByteUnit;
-use rocket::http::ContentType;
-use rocket::response::Stream;
-use rocket::Data;
+use rocket::http::{ContentType, Status};
+use rocket::request::Request;
+use rocket::response::{Responder, Stream};
+use rocket::{Data, Response, State};
 use rocket_contrib::json::JsonValue;
 use rocket_contrib::uuid::Uuid;
 use rocket_multipart_form_data::{
     MultipartFormData, MultipartFormDataField, MultipartFormDataOptions,
 };
+use snafu::{ResultExt, Snafu};
 use std::env;
 use std::path::PathBuf;
 use std::str::FromStr;
@@ -27,12 +29,10 @@ use tokio::fs::{self, File};
 use tokio::io::AsyncWriteExt;
 
 const METADATA_URL_KEY: &str = "METADATA_URL";
-const SERVER_ADDRESS_KEY: &str = "SERVER_ADDRESS";
 
 lazy_static! {
-    // should be replaced with DB
     static ref UPLOADS_DIR: PathBuf = {
-      let mut path_buf = dirs::home_dir().unwrap();
+      let mut path_buf = dirs::home_dir().expect("Couldn't determine home dir");
       path_buf.push("ccfs-uploads");
       path_buf
     };
@@ -40,10 +40,68 @@ lazy_static! {
     static ref ID: Uuid = Uuid::from_str("cfc1b87a-2a58-4c17-a5ca-18232c535297").unwrap();
 }
 
+#[derive(Debug, Snafu)]
+enum Error {
+    #[snafu(display("Unable to create {}: {}", path.display(), source))]
+    IOCreate {
+        source: tokio::io::Error,
+        path: PathBuf,
+    },
+    #[snafu(display("Unable to write to {}: {}", path.display(), source))]
+    IOWrite {
+        source: tokio::io::Error,
+        path: PathBuf,
+    },
+
+    #[snafu(display("Unable to parse multipart form data: {}", source))]
+    ParseData {
+        source: rocket_multipart_form_data::MultipartFormDataError,
+    },
+
+    #[snafu(display("Unable to parse url {}: {}", text, source))]
+    ParseUrl {
+        source: url::ParseError,
+        text: String,
+    },
+
+    #[snafu(display("Unable to parse uuid {}: {}", text, source))]
+    ParseUuid {
+        source: rocket_contrib::uuid::uuid_crate::Error,
+        text: String,
+    },
+    #[snafu(display("Unable to parse number {}: {}", text, source))]
+    ParseNumber {
+        source: std::num::ParseIntError,
+        text: String,
+    },
+    #[snafu(display("Communication error with metadata server: {}", source))]
+    MetaServerCommunication { source: reqwest::Error },
+    #[snafu(display("Missing form part {}", name))]
+    MissingPart { name: String },
+}
+
+impl<'r> Responder<'r, 'static> for Error {
+    fn respond_to(self, _request: &'r Request<'_>) -> rocket::response::Result<'static> {
+        Response::build().status(Status::InternalServerError).ok()
+    }
+}
+
+type Result<T, E = Error> = std::result::Result<T, E>;
+
+struct MetadataUrl(&'static str);
+
 #[post("/upload", data = "<data>")]
-async fn multipart_upload(content_type: &ContentType, data: Data) -> JsonValue {
+async fn multipart_upload(
+    metadata_url: State<'_, MetadataUrl>,
+    content_type: &ContentType,
+    data: Data,
+) -> Result<JsonValue> {
     if !UPLOADS_DIR.exists() {
-        fs::create_dir(UPLOADS_DIR.as_path()).await.unwrap();
+        fs::create_dir(UPLOADS_DIR.as_path())
+            .await
+            .context(IOCreate {
+                path: UPLOADS_DIR.as_path(),
+            })?;
     }
     let mut options = MultipartFormDataOptions::new();
     options.temporary_dir = UPLOADS_DIR.to_path_buf();
@@ -60,50 +118,62 @@ async fn multipart_upload(content_type: &ContentType, data: Data) -> JsonValue {
     let limit = 64.mebibytes();
     let multipart_form_data = MultipartFormData::parse(content_type, data.open(limit), options)
         .await
-        .unwrap();
+        .context(ParseData)?;
 
-    let file = multipart_form_data.raw.get("file");
-    let file_id_text = multipart_form_data.texts.get("file_id");
-    let file_part_num_text = multipart_form_data.texts.get("file_part_num");
-
-    let mut file_id = init_value();
-    let mut file_part_num: u16 = 0;
-
-    if let Some(file_id_text) = file_id_text {
-        let text = &file_id_text[0];
-        file_id = Uuid::from_str(&text.text).unwrap();
-    }
-
-    if let Some(file_part_num_text) = file_part_num_text {
-        let text = &file_part_num_text[0];
-        let _text = &text.text;
-        file_part_num = text.text.parse::<u16>().unwrap();
-    }
+    let file_id_text = multipart_form_data
+        .texts
+        .get("file_id")
+        .ok_or_else(|| MissingPart { name: "file_id" }.build())?[0]
+        .text
+        .clone();
+    let file_id = Uuid::from_str(&file_id_text).context(ParseUuid {
+        text: file_id_text.clone(),
+    })?;
+    let file_part_num_text = multipart_form_data
+        .texts
+        .get("file_part_num")
+        .ok_or_else(|| {
+            MissingPart {
+                name: "file_part_num",
+            }
+            .build()
+        })?[0]
+        .text
+        .clone();
+    let file_part_num = file_part_num_text.parse::<u16>().context(ParseNumber {
+        text: file_part_num_text.clone(),
+    })?;
+    let file = &multipart_form_data
+        .raw
+        .get("file")
+        .ok_or_else(|| MissingPart { name: "file" }.build())?[0];
 
     let chunk = Chunk::new(file_id, *ID, file_part_num);
 
-    if let Some(raw_field) = file {
-        let file = &raw_field[0];
-        let _content_type = &file.content_type;
-        let content = &file.raw;
+    let content = &file.raw;
 
-        let mut new_path = UPLOADS_DIR.to_path_buf();
-        new_path.push(chunk.id.to_string());
-        let mut f = File::create(new_path).await.unwrap();
-        f.write_all(&content).await.unwrap();
-    }
+    let mut new_path = UPLOADS_DIR.to_path_buf();
+    new_path.push(chunk.id.to_string());
+    let mut f = File::create(&new_path)
+        .await
+        .context(IOCreate { path: &new_path })?;
+    f.write_all(&content)
+        .await
+        .context(IOWrite { path: new_path })?;
 
-    let metadata_server_url = env::var(METADATA_URL_KEY).unwrap();
     let _resp = reqwest::Client::new()
         .post(
-            reqwest::Url::parse(format!("{}/api/chunk/completed", metadata_server_url).as_str())
-                .unwrap(),
+            reqwest::Url::parse(&format!("{}/api/chunk/completed", metadata_url.0)).context(
+                ParseUrl {
+                    text: metadata_url.0,
+                },
+            )?,
         )
         .json(&chunk)
         .send()
         .await
-        .unwrap();
-    json!(chunk)
+        .context(MetaServerCommunication)?;
+    Ok(json!(chunk))
 }
 
 #[get("/download/<chunk_id>")]
@@ -121,33 +191,41 @@ fn not_found() -> JsonValue {
     })
 }
 
-fn start_ping_job(address: String) {
-    thread::spawn(move || loop {
-        let metadata_server_url = env::var(METADATA_URL_KEY).unwrap();
-        let _resp = reqwest::Client::new()
-            .post(
-                reqwest::Url::parse(format!("{}/api/ping", metadata_server_url).as_str()).unwrap(),
-            )
-            .header("x-chunk-server-id", ID.to_string())
-            .header("x-chunk-server-address", &address)
-            .send();
-        thread::sleep(time::Duration::from_millis(5000))
+fn start_ping_job(address: String, metadata_url: String) {
+    thread::spawn(move || -> Result<()> {
+        loop {
+            let _resp = reqwest::Client::new()
+                .post(
+                    reqwest::Url::parse(&format!("{}/api/ping", &metadata_url)).context(
+                        ParseUrl {
+                            text: metadata_url.clone(),
+                        },
+                    )?,
+                )
+                .header("x-chunk-server-id", ID.to_string())
+                .header("x-chunk-server-address", &address)
+                .send();
+            thread::sleep(time::Duration::from_millis(5000))
+        }
     });
 }
 
 #[launch]
 fn rocket() -> rocket::Rocket {
     match env::var(METADATA_URL_KEY) {
-        Ok(_) => {
+        Ok(metadata_url) => {
             let rocket_instance = rocket::ignite()
                 .mount("/api", routes![multipart_upload, download])
-                .register(catchers![not_found]);
+                .register(catchers![not_found])
+                .manage(MetadataUrl(Box::leak(
+                    metadata_url.clone().into_boxed_str(),
+                )));
             let server_addr = format!(
                 "http://{}:{}",
                 rocket_instance.config().address,
                 rocket_instance.config().port
             );
-            start_ping_job(server_addr);
+            start_ping_job(server_addr, metadata_url);
 
             rocket_instance
         }
