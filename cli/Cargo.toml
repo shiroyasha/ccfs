@@ -7,11 +7,13 @@ edition = "2018"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-uuid = { version = "0.7", features = ["v4"] }
+tokio = { version = "0.2", features = ["full"] }
+uuid = { version = "0.8.1", features = ["v4"] }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 serde_derive = "1.0"
 serde_yaml = "0.8"
-clap="2.33"
-reqwest = "0.9"
-ccfs-commons = {path = "../ccfs-commons"}
+clap = "2.33"
+reqwest = { version = "0.10.10", features = ["json", "stream"] }
+ccfs-commons = { path = "../ccfs-commons" }
+futures-util = { version = "0.3.8", default-features = false }

@@ -1,20 +1,20 @@
-#![feature(proc_macro_hygiene, decl_macro)]
-
 extern crate ccfs_commons;
 extern crate clap;
 extern crate reqwest;
 
-use ccfs_commons::{Chunk, ChunkServer, File, FileStatus, CHUNK_SIZE};
+use ccfs_commons::{Chunk, ChunkServer, File, CHUNK_SIZE};
 use clap::{App, Arg, SubCommand};
+use futures_util::StreamExt;
 use reqwest::multipart::Part;
 use std::collections::HashMap;
-use std::fs::File as FileFS;
-use std::io::prelude::*;
+use std::error::Error;
 use std::path::{Path, PathBuf};
 use std::str;
-use uuid::Uuid;
+use tokio::fs::File as FileFS;
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
-fn main() {
+#[tokio::main]
+async fn main() -> Result<(), Box<dyn Error>> {
     let matches = App::new("Chop-Chop File System")
         .version("1.0")
         .author("Zoran L. <lazarevic.zoki91@gmail.com>")
@@ -84,6 +84,8 @@ fn main() {
             client,
             matches.value_of("file_path").unwrap(),
         )
+        .await
+        .unwrap();
     } else if let Some(ref matches) = matches.subcommand_matches("download") {
         let file_id = matches.value_of("file_id").unwrap();
         let mut path_buf = PathBuf::new();
@@ -101,86 +103,84 @@ fn main() {
             path_buf.push(file_id);
             path = path_buf.as_path();
         }
-        download(&meta_server_url, client, file_id, path)
+        download(&meta_server_url, client, file_id, path).await?;
     } else if let Some(ref _matches) = matches.subcommand_matches("remove") {
-        println!("Not implemented yet :(")
+        unimplemented!("Not implemented yet :(")
     } else {
-        println!("Some other subcommand was used")
+        println!("Some other subcommand was used");
     }
+    Ok(())
 }
 
-fn upload(meta_server_url: &str, client: reqwest::Client, path: &str) {
+async fn upload(
+    meta_server_url: &str,
+    client: reqwest::Client,
+    path: &str,
+) -> Result<(), reqwest::Error> {
     let file_path = Path::new(path);
     if file_path.exists() {
         let size = file_path.metadata().unwrap().len();
-        let file_data = File {
-            id: Uuid::nil(),
-            name: file_path.to_str().unwrap().to_string(),
-            size,
-            num_of_chunks: 0,
-            num_of_completed_chunks: 0,
-            status: FileStatus::Started,
-        };
+        let file_data = File::new(file_path.to_str().unwrap().to_string(), size);
         let file_resp: Result<File, _> = client
-            .post(format!("{}/api/files/upload", meta_server_url).as_str())
+            .post(&format!("{}/api/files/upload", meta_server_url))
             .json(&file_data)
             .send()
-            .unwrap()
-            .json();
-        let servers_resp: Result<Vec<ChunkServer>, _> = client
-            .get(format!("{}/api/servers", meta_server_url).as_str())
+            .await?
+            .json()
+            .await;
+        let servers: Vec<ChunkServer> = client
+            .get(&format!("{}/api/servers", meta_server_url))
             .send()
-            .unwrap()
-            .json();
-        if !servers_resp.is_ok() {
-            return println!("There are no available servers at the moment");
-        } else {
-            match file_resp {
-                Ok(file) => {
-                    println!("file id: {}", file.id);
-                    let servers = servers_resp.unwrap();
-                    let mut i = 0;
-                    let mut file_part = 1;
-                    let mut f = FileFS::open(file_path).unwrap();
+            .await?
+            .json()
+            .await?;
+        match file_resp {
+            Ok(file) => {
+                println!("file id: {}", file.id);
+                let mut i = 0usize;
+                let mut file_part = 1usize;
+                let mut f = FileFS::open(file_path).await.unwrap();
 
-                    loop {
-                        let mut chunk = Vec::with_capacity(CHUNK_SIZE as usize);
-                        let n = std::io::Read::by_ref(&mut f)
-                            .take(CHUNK_SIZE)
-                            .read_to_end(&mut chunk)
-                            .unwrap();
-                        if n == 0 {
-                            break;
-                        }
-                        let form = reqwest::multipart::Form::new()
-                            .text("file_id", file.id.to_string())
-                            .text("file_part_num", file_part.to_string())
-                            .part("file", Part::bytes(chunk));
-                        let server = &servers[i];
-                        i = i + 1;
-                        client
-                            .post(format!("{}/api/upload", server.address).as_str())
-                            .multipart(form)
-                            .send()
-                            .unwrap();
-
-                        file_part = file_part + 1;
-
-                        if n < CHUNK_SIZE as usize {
-                            break;
-                        }
+                loop {
+                    let mut chunk = Vec::with_capacity(CHUNK_SIZE as usize);
+                    let n = f.read_buf(&mut chunk).await.unwrap();
+                    if n == 0 && chunk.is_empty() {
+                        break;
                     }
-                    println!("Completed file upload");
+                    let form = reqwest::multipart::Form::new()
+                        .text("file_id", file.id.to_string())
+                        .text("file_part_num", file_part.to_string())
+                        .part("file", Part::bytes(chunk));
+                    let server = &servers[i];
+                    i += 1;
+                    client
+                        .post(format!("{}/api/upload", server.address).as_str())
+                        .multipart(form)
+                        .send()
+                        .await?;
+
+                    file_part += 1;
+
+                    if n < CHUNK_SIZE as usize {
+                        break;
+                    }
                 }
-                _ => println!("Error while uploading file"),
+                println!("Completed file upload");
             }
+            _ => println!("Error while uploading file"),
         }
     } else {
         println!("The file {} doesn't exists", path);
     }
+    Ok(())
 }
 
-fn download(meta_server_url: &str, client: reqwest::Client, file_id: &str, path: &Path) {
+async fn download(
+    meta_server_url: &str,
+    client: reqwest::Client,
+    file_id: &str,
+    path: &Path,
+) -> Result<(), reqwest::Error> {
     // get chunks and merge them into a file
     let file_resp: Result<File, _> = client
         .get(
@@ -188,8 +188,9 @@ fn download(meta_server_url: &str, client: reqwest::Client, file_id: &str, path:
                 .unwrap(),
         )
         .send()
-        .unwrap()
-        .json();
+        .await?
+        .json()
+        .await;
     if let Ok(file) = file_resp {
         let chunks_resp: Result<Vec<Chunk>, _> = client
             .get(
@@ -199,13 +200,14 @@ fn download(meta_server_url: &str, client: reqwest::Client, file_id: &str, path:
                 .unwrap(),
             )
             .send()
-            .unwrap()
-            .json();
+            .await?
+            .json()
+            .await;
         if let Ok(mut chunks) = chunks_resp {
             chunks.sort_by(|a, b| a.file_part_num.cmp(&b.file_part_num));
-            let mut file = FileFS::create(path).unwrap();
+            let mut file = FileFS::create(path).await.unwrap();
             for chunk in chunks.iter() {
-                let server_resp: Result<ChunkServer, _> = client
+                let server: ChunkServer = client
                     .get(
                         reqwest::Url::parse(
                             format!("{}/api/servers/{}", meta_server_url, &chunk.server_id)
@@ -214,28 +216,22 @@ fn download(meta_server_url: &str, client: reqwest::Client, file_id: &str, path:
                         .unwrap(),
                     )
                     .send()
-                    .unwrap()
-                    .json();
-                if !server_resp.is_ok() {
-                    println!("Cannot find server {}", &chunk.server_id);
-                } else {
-                    let server = server_resp.unwrap();
-                    let mut resp = client
-                        .get(
-                            reqwest::Url::parse(
-                                format!("{}/api/download/{}", server.address, &chunk.id).as_str(),
-                            )
-                            .unwrap(),
-                        )
-                        .send()
-                        .unwrap();
-                    if resp.status().is_success() {
-                        let mut buf: Vec<u8> = vec![];
-                        resp.copy_to(&mut buf).unwrap();
-                        file.write(&buf).unwrap();
-                    }
+                    .await?
+                    .json()
+                    .await?;
+                let mut stream = reqwest::get(
+                    reqwest::Url::parse(
+                        format!("{}/api/download/{}", server.address, &chunk.id).as_str(),
+                    )
+                    .unwrap(),
+                )
+                .await?
+                .bytes_stream();
+                while let Some(content) = stream.next().await {
+                    file.write(&content.unwrap()).await.unwrap();
                 }
             }
         }
     }
+    Ok(())
 }

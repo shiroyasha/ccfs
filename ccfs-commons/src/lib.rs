@@ -1,21 +1,27 @@
+use rocket::http::Status;
+use rocket::outcome::Outcome::*;
+use rocket::request::{self, FromRequest, Request};
+use rocket_contrib::uuid::{uuid_crate, Uuid};
+use serde::{Deserialize, Serialize};
+use std::str::FromStr;
+use std::time::Instant;
+
 pub const CHUNK_SIZE: u64 = 64000000;
 
+pub fn init_value() -> Uuid {
+    Uuid::from_str("").unwrap()
+}
+
 pub mod custom_uuid {
+    use rocket_contrib::uuid::Uuid;
     use serde::{de::Error, Deserialize, Deserializer, Serialize, Serializer};
     use std::str::FromStr;
-    use uuid::Uuid;
 
-    pub fn serialize<'a, S>(val: &'a Uuid, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
+    pub fn serialize<S: Serializer>(val: &'_ Uuid, serializer: S) -> Result<S::Ok, S::Error> {
         val.to_string().serialize(serializer)
     }
 
-    pub fn deserialize<'de, D>(deserializer: D) -> Result<Uuid, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
+    pub fn deserialize<'de, D: Deserializer<'de>>(deserializer: D) -> Result<Uuid, D::Error> {
         let val: &str = Deserialize::deserialize(deserializer)?;
         Uuid::from_str(val).map_err(D::Error::custom)
     }
@@ -25,32 +31,19 @@ pub mod custom_instant {
     use serde::{Deserializer, Serialize, Serializer};
     use std::time::Instant;
 
-    pub fn serialize<S>(_val: &Instant, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
+    pub fn serialize<S: Serializer>(_val: &Instant, serializer: S) -> Result<S::Ok, S::Error> {
         "".to_string().serialize(serializer)
     }
 
-    pub fn deserialize<'de, D>(_deserializer: D) -> Result<Instant, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
+    pub fn deserialize<'de, D: Deserializer<'de>>(_deserializer: D) -> Result<Instant, D::Error> {
         Ok(Instant::now())
     }
 }
 
-use rocket::http::Status;
-use rocket::request::{self, FromRequest, Request};
-use rocket::Outcome;
-use serde::{Deserialize, Serialize};
-use std::time::Instant;
-use uuid::Uuid;
-
 #[derive(Clone, Serialize, Deserialize, Debug)]
 pub struct ChunkServer {
     #[serde(with = "custom_uuid")]
-    #[serde(default = "Uuid::nil")]
+    #[serde(default = "init_value")]
     pub id: Uuid,
     pub address: String,
     pub is_active: bool,
@@ -76,19 +69,22 @@ pub enum HeaderError {
     Invalid,
 }
 
+#[rocket::async_trait]
 impl<'a, 'r> FromRequest<'a, 'r> for ChunkServer {
     type Error = HeaderError;
 
-    fn from_request(request: &'a Request<'r>) -> request::Outcome<Self, Self::Error> {
+    async fn from_request(request: &'a Request<'r>) -> request::Outcome<Self, Self::Error> {
         let id_header: Vec<_> = request.headers().get("x-chunk-server-id").collect();
         let address_header: Vec<_> = request.headers().get("x-chunk-server-address").collect();
-        if id_header.len() == 0 || address_header.len() == 0 {
-            return Outcome::Failure((Status::BadRequest, HeaderError::Missing));
-        }
-        let parsed_id = Uuid::parse_str(&id_header.concat());
-        match parsed_id {
-            Ok(id) => Outcome::Success(ChunkServer::new(id, address_header.concat())),
-            _ => Outcome::Failure((Status::BadRequest, HeaderError::Invalid)),
+        match (id_header.len(), address_header.len()) {
+            (a, b) if a == 0 || b == 0 => Failure((Status::BadRequest, HeaderError::Missing)),
+            _ => {
+                let parsed_id = Uuid::from_str(&id_header.concat());
+                match parsed_id {
+                    Ok(id) => Success(ChunkServer::new(id, address_header.concat())),
+                    _ => Failure((Status::BadRequest, HeaderError::Invalid)),
+                }
+            }
         }
     }
 }
@@ -108,7 +104,7 @@ impl FileStatus {
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct File {
     #[serde(with = "custom_uuid")]
-    #[serde(default = "Uuid::nil")]
+    #[serde(default = "init_value")]
     pub id: Uuid,
     pub name: String,
     pub size: u64,
@@ -121,7 +117,7 @@ pub struct File {
 impl File {
     pub fn new(name: String, size: u64) -> File {
         File {
-            id: Uuid::new_v4(),
+            id: Uuid::from_str(uuid_crate::Uuid::new_v4().to_string().as_str()).unwrap(),
             name,
             size,
             num_of_chunks: (size / CHUNK_SIZE + 1) as u16,
@@ -134,7 +130,7 @@ impl File {
 #[derive(Serialize, Deserialize, Clone, Copy)]
 pub struct Chunk {
     #[serde(with = "custom_uuid")]
-    #[serde(default = "Uuid::nil")]
+    #[serde(default = "init_value")]
     pub id: Uuid,
     #[serde(with = "custom_uuid")]
     pub file_id: Uuid,
@@ -145,7 +141,7 @@ pub struct Chunk {
 impl Chunk {
     pub fn new(file_id: Uuid, server_id: Uuid, file_part_num: u16) -> Chunk {
         Chunk {
-            id: Uuid::new_v4(),
+            id: Uuid::from_str(uuid_crate::Uuid::new_v4().to_string().as_str()).unwrap(),
             file_id,
             server_id,
             file_part_num,
