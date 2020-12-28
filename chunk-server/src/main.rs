@@ -57,12 +57,6 @@ enum Error {
         source: rocket_multipart_form_data::MultipartFormDataError,
     },
 
-    #[snafu(display("Unable to parse url {}: {}", text, source))]
-    ParseUrl {
-        source: url::ParseError,
-        text: String,
-    },
-
     #[snafu(display("Unable to parse uuid {}: {}", text, source))]
     ParseUuid {
         source: rocket_contrib::uuid::uuid_crate::Error,
@@ -163,13 +157,7 @@ async fn multipart_upload(
         .context(IOWrite { path: new_path })?;
 
     let _resp = reqwest::Client::new()
-        .post(
-            reqwest::Url::parse(&format!("{}/api/chunk/completed", metadata_url.0)).context(
-                ParseUrl {
-                    text: metadata_url.0,
-                },
-            )?,
-        )
+        .post(&format!("{}/api/chunk/completed", metadata_url.0))
         .json(&chunk)
         .send()
         .await
@@ -196,13 +184,7 @@ fn start_ping_job(address: String, metadata_url: String, server_id: String) {
     thread::spawn(move || -> Result<()> {
         loop {
             let _resp = reqwest::Client::new()
-                .post(
-                    reqwest::Url::parse(&format!("{}/api/ping", &metadata_url)).context(
-                        ParseUrl {
-                            text: metadata_url.clone(),
-                        },
-                    )?,
-                )
+                .post(&format!("{}/api/ping", &metadata_url))
                 .header("x-chunk-server-id", &server_id)
                 .header("x-chunk-server-address", &address)
                 .send();
