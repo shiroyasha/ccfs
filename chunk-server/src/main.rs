@@ -29,15 +29,14 @@ use tokio::fs::{self, File};
 use tokio::io::AsyncWriteExt;
 
 const METADATA_URL_KEY: &str = "METADATA_URL";
+const SERVER_ID_KEY: &str = "SERVER_ID";
 
 lazy_static! {
     static ref UPLOADS_DIR: PathBuf = {
-      let mut path_buf = dirs::home_dir().expect("Couldn't determine home dir");
-      path_buf.push("ccfs-uploads");
-      path_buf
+        let mut path_buf = dirs::home_dir().expect("Couldn't determine home dir");
+        path_buf.push("ccfs-uploads");
+        path_buf
     };
-    // static ref ID: Uuid = uuid_crate::Uuid::new_v4();
-    static ref ID: Uuid = Uuid::from_str("cfc1b87a-2a58-4c17-a5ca-18232c535297").unwrap();
 }
 
 #[derive(Debug, Snafu)]
@@ -89,10 +88,12 @@ impl<'r> Responder<'r, 'static> for Error {
 type Result<T, E = Error> = std::result::Result<T, E>;
 
 struct MetadataUrl(&'static str);
+struct ServerID(&'static Uuid);
 
 #[post("/upload", data = "<data>")]
 async fn multipart_upload(
     metadata_url: State<'_, MetadataUrl>,
+    server_id: State<'_, ServerID>,
     content_type: &ContentType,
     data: Data,
 ) -> Result<JsonValue> {
@@ -148,7 +149,7 @@ async fn multipart_upload(
         .get("file")
         .ok_or_else(|| MissingPart { name: "file" }.build())?[0];
 
-    let chunk = Chunk::new(file_id, *ID, file_part_num);
+    let chunk = Chunk::new(file_id, *server_id.0, file_part_num);
 
     let content = &file.raw;
 
@@ -191,7 +192,7 @@ fn not_found() -> JsonValue {
     })
 }
 
-fn start_ping_job(address: String, metadata_url: String) {
+fn start_ping_job(address: String, metadata_url: String, server_id: String) {
     thread::spawn(move || -> Result<()> {
         loop {
             let _resp = reqwest::Client::new()
@@ -202,7 +203,7 @@ fn start_ping_job(address: String, metadata_url: String) {
                         },
                     )?,
                 )
-                .header("x-chunk-server-id", ID.to_string())
+                .header("x-chunk-server-id", &server_id)
                 .header("x-chunk-server-address", &address)
                 .send();
             thread::sleep(time::Duration::from_millis(5000))
@@ -212,25 +213,26 @@ fn start_ping_job(address: String, metadata_url: String) {
 
 #[launch]
 fn rocket() -> rocket::Rocket {
-    match env::var(METADATA_URL_KEY) {
-        Ok(metadata_url) => {
-            let rocket_instance = rocket::ignite()
-                .mount("/api", routes![multipart_upload, download])
-                .register(catchers![not_found])
-                .manage(MetadataUrl(Box::leak(
-                    metadata_url.clone().into_boxed_str(),
-                )));
-            let server_addr = format!(
-                "http://{}:{}",
-                rocket_instance.config().address,
-                rocket_instance.config().port
-            );
-            start_ping_job(server_addr, metadata_url);
+    let metadata_url = env::var(METADATA_URL_KEY)
+        .unwrap_or_else(|_| panic!("missing {} env variable", METADATA_URL_KEY));
+    let server_id = env::var(SERVER_ID_KEY)
+        .unwrap_or_else(|_| panic!("missing {} env variable", SERVER_ID_KEY));
 
-            rocket_instance
-        }
-        Err(_) => {
-            panic!("missing {} env variable", METADATA_URL_KEY);
-        }
-    }
+    let rocket_instance = rocket::ignite()
+        .mount("/api", routes![multipart_upload, download])
+        .register(catchers![not_found])
+        .manage(MetadataUrl(Box::leak(
+            metadata_url.clone().into_boxed_str(),
+        )))
+        .manage(ServerID(Box::leak(Box::new(
+            Uuid::from_str(&server_id).expect("Server ID is not valid"),
+        ))));
+    let server_addr = format!(
+        "http://{}:{}",
+        rocket_instance.config().address,
+        rocket_instance.config().port
+    );
+    start_ping_job(server_addr, metadata_url, server_id);
+
+    rocket_instance
 }
