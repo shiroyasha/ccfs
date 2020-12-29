@@ -12,6 +12,8 @@ use tokio::fs::File as FileFS;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::stream::StreamExt;
 
+const BUF_SIZE: usize = 16384;
+
 #[derive(Debug, Snafu)]
 enum Error {
     #[snafu(display("Unable to read file metadata {}: {}", path.display(), source))]
@@ -145,40 +147,48 @@ async fn upload<T: AsRef<Path>>(meta_url: &str, client: &Client, file_path: T) -
             .context(ParseJson)?;
         let servers_url = format!("{}/api/servers", meta_url);
         let servers: Vec<ChunkServer> = get_request_json(&client, servers_url).await?;
-        let mut i = 0;
-        let mut file_part = 0usize;
+        let mut iter = servers.iter().cycle();
         let mut f = FileFS::open(path).await.context(FileIO {
             path,
             action: FileAction::Open,
         })?;
 
-        loop {
+        for file_part in 0..=file_meta.len() / CHUNK_SIZE {
             let mut chunk = Vec::with_capacity(CHUNK_SIZE as usize);
-            let n = f.read_buf(&mut chunk).await.context(FileIO {
-                path,
-                action: FileAction::Read,
-            })?;
-            if n == 0 && chunk.is_empty() {
-                break;
+            loop {
+                let mut buff_size = BUF_SIZE;
+                let remaining = CHUNK_SIZE as usize - chunk.len();
+                if remaining < BUF_SIZE {
+                    buff_size = remaining;
+                }
+                let mut temp = Vec::with_capacity(buff_size);
+                let n = f.read_buf(&mut temp).await.context(FileIO {
+                    path,
+                    action: FileAction::Read,
+                })?;
+                chunk.append(&mut temp);
+                if n < BUF_SIZE || CHUNK_SIZE == chunk.len() as u64 {
+                    break;
+                }
             }
             let form = reqwest::multipart::Form::new()
                 .text("file_id", file.id.to_string())
                 .text("file_part_num", file_part.to_string())
                 .part("file", Part::bytes(chunk));
-            let server = &servers[i];
-            i += 1;
+            let server = match iter.next() {
+                Some(server) => server,
+                None => panic!("No available chunk servers"),
+            };
             let upload_url = format!("{}/api/upload", server.address);
-            client
+            let resp = client
                 .post(&upload_url)
                 .multipart(form)
                 .send()
                 .await
-                .context(FailedRequest { url: upload_url })?;
-
-            file_part += 1;
-
-            if n < CHUNK_SIZE as usize {
-                break;
+                .context(FailedRequest { url: upload_url });
+            match resp {
+                Ok(r) => println!("response status code {:?}", r.status()),
+                Err(error) => println!("Failed ------> {:?}", error),
             }
         }
         println!("Completed file upload");
