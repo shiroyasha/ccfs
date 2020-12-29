@@ -5,10 +5,9 @@ extern crate lazy_static;
 #[macro_use]
 extern crate rocket_contrib;
 extern crate ccfs_commons;
-extern crate mut_static;
 
 use ccfs_commons::{Chunk, ChunkServer, File, FileStatus};
-use chrono::{DateTime, Utc};
+use chrono::{DateTime, Duration, Utc};
 use rocket_contrib::json::{Json, JsonValue};
 use rocket_contrib::uuid::uuid_crate as uuid;
 use rocket_contrib::uuid::Uuid;
@@ -31,13 +30,19 @@ lazy_static! {
 #[get("/servers")]
 fn get_servers() -> JsonValue {
     match CHUNK_SERVERS.read() {
-        Ok(servers_map) => json!(servers_map.values().cloned().collect::<Vec<ChunkServer>>()),
+        Ok(servers_map) => {
+            json!(servers_map
+                .values()
+                .filter(|s| s.latest_ping_time.signed_duration_since(Utc::now())
+                    <= Duration::seconds(6))
+                .cloned()
+                .collect::<Vec<ChunkServer>>())
+        }
         Err(_) => json!({ "status": "error", "reason": "Unexpected error, try again" }),
     }
 }
 
-/// Returns a list of available chunk servers where the file chunks
-/// can be uploaded
+/// Returns chunk servers data for the server with ID <id>
 #[get("/servers/<id>")]
 fn get_server(id: Uuid) -> JsonValue {
     match CHUNK_SERVERS.read() {
@@ -52,26 +57,20 @@ fn get_server(id: Uuid) -> JsonValue {
     }
 }
 
-/// Registers a chunk server as active, or updates the latest_ping_time
-/// if the map already contains it
+/// Registers a new active chunk server or updates the latest_ping_time
 #[post("/ping")]
 fn chunk_server_ping(header_info: ChunkServer) -> JsonValue {
     let server_id = header_info.id;
     let server_addr = header_info.address;
 
     match CHUNK_SERVERS.write() {
-        Ok(mut servers_map) => match servers_map.get_mut(&server_id) {
-            Some(server) => {
-                server.latest_ping_time = DateTime::from_utc(Utc::now().naive_utc(), Utc);
-                json!(*server)
-            }
-            None => {
-                let chunk_server = ChunkServer::new(server_id, server_addr);
-                let resp = json!(chunk_server);
-                servers_map.insert(server_id.into_inner(), chunk_server);
-                resp
-            }
-        },
+        Ok(mut servers_map) => {
+            let server = servers_map
+                .entry(server_id.into_inner())
+                .or_insert_with(|| ChunkServer::new(server_id, server_addr));
+            server.latest_ping_time = DateTime::from_utc(Utc::now().naive_utc(), Utc);
+            json!(*server)
+        }
         Err(_) => json!({ "status": "error", "reason": "Unexpected error, try again" }),
     }
 }
@@ -90,7 +89,7 @@ fn create_file(file_info: Json<File>) -> JsonValue {
 }
 
 /// Returns the file info
-#[get("/files/<path>")]
+#[get("/files?<path>")]
 fn get_file(path: String) -> JsonValue {
     let file_names_map = FILE_NAMES.read().unwrap();
     let file_id = file_names_map.get(&path).unwrap();
