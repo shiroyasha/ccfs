@@ -1,17 +1,16 @@
 extern crate ccfs_commons;
-extern crate reqwest;
 
 use ccfs_commons::{Chunk, ChunkServer, File, CHUNK_SIZE};
-use futures_util::StreamExt;
-use reqwest::multipart::Part;
+use reqwest::{multipart::Part, Client, Response};
+use serde::{de::DeserializeOwned, Serialize};
 use snafu::{ResultExt, Snafu};
 use std::collections::HashMap;
 use std::fmt;
 use std::path::{Path, PathBuf};
-use std::str;
 use structopt::StructOpt;
 use tokio::fs::File as FileFS;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::stream::StreamExt;
 
 #[derive(Debug, Snafu)]
 enum Error {
@@ -114,14 +113,14 @@ async fn main() -> Result<()> {
     let meta_server_url = config_map
         .get("metadata-server-url")
         .expect("Couldn't find metadata-server-url config");
-    let client = reqwest::Client::new();
+    let client = Client::new();
 
     match opts.cmd {
         Command::Upload { file_path } => {
-            upload(&meta_server_url, client, &file_path).await?;
+            upload(&meta_server_url, &client, &file_path).await?;
         }
         Command::Download { file_path } => {
-            download(&meta_server_url, client, Path::new(&file_path), None).await?;
+            download(&meta_server_url, &client, Path::new(&file_path), None).await?;
         }
         Command::Remove { file_path: _path } => {
             unimplemented!("Not implemented yet :(")
@@ -130,11 +129,7 @@ async fn main() -> Result<()> {
     Ok(())
 }
 
-async fn upload<T: AsRef<Path>>(
-    meta_server_url: &str,
-    client: reqwest::Client,
-    file_path: T,
-) -> Result<()> {
+async fn upload<T: AsRef<Path>>(meta_url: &str, client: &Client, file_path: T) -> Result<()> {
     let path = file_path.as_ref();
     if path.exists() && !path.is_dir() {
         let file_meta = path.metadata().context(ReadMetadata { path })?;
@@ -142,25 +137,14 @@ async fn upload<T: AsRef<Path>>(
             path.file_name().unwrap().to_str().unwrap().to_string(),
             file_meta.len(),
         );
-        let upload_url = format!("{}/api/files/upload", meta_server_url);
-        let file: File = client
-            .post(&upload_url)
-            .json(&file_data)
-            .send()
-            .await
-            .context(FailedRequest { url: upload_url })?
+        let upload_url = format!("{}/api/files/upload", meta_url);
+        let file: File = post_request(&client, upload_url, &file_data)
+            .await?
             .json()
             .await
             .context(ParseJson)?;
-        let servers_url = format!("{}/api/servers", meta_server_url);
-        let servers: Vec<ChunkServer> = client
-            .get(&servers_url)
-            .send()
-            .await
-            .context(FailedRequest { url: servers_url })?
-            .json()
-            .await
-            .context(ParseJson)?;
+        let servers_url = format!("{}/api/servers", meta_url);
+        let servers: Vec<ChunkServer> = get_request_json(&client, servers_url).await?;
         let mut i = 0;
         let mut file_part = 0usize;
         let mut f = FileFS::open(path).await.context(FileIO {
@@ -205,34 +189,16 @@ async fn upload<T: AsRef<Path>>(
 }
 
 async fn download(
-    meta_server_url: &str,
-    client: reqwest::Client,
-    file_path: &Path,
+    meta_url: &str,
+    client: &Client,
+    path: &Path,
     target_path: Option<&Path>,
 ) -> Result<()> {
     // get chunks and merge them into a file
-    let file_url = format!(
-        "{}/api/files/{}",
-        meta_server_url,
-        &file_path.file_name().unwrap().to_str().unwrap().to_string()
-    );
-    let file: File = client
-        .get(&file_url)
-        .send()
-        .await
-        .context(FailedRequest { url: file_url })?
-        .json()
-        .await
-        .context(ParseJson)?;
-    let chunks_url = format!("{}/api/chunks/file/{}", meta_server_url, &file.id);
-    let mut chunks: Vec<Chunk> = client
-        .get(&chunks_url)
-        .send()
-        .await
-        .context(FailedRequest { url: chunks_url })?
-        .json()
-        .await
-        .context(ParseJson)?;
+    let file_url = format!("{}/api/files?path={}", meta_url, path.display());
+    let file: File = get_request_json(&client, file_url).await?;
+    let chunks_url = format!("{}/api/chunks/file/{}", meta_url, &file.id);
+    let mut chunks: Vec<Chunk> = get_request_json(&client, chunks_url).await?;
     chunks.sort_by(|a, b| a.file_part_num.cmp(&b.file_part_num));
     let default_path = format!("./{}", file.name);
     let path = target_path.unwrap_or_else(|| Path::new(&default_path));
@@ -241,22 +207,10 @@ async fn download(
         action: FileAction::Create,
     })?;
     for chunk in chunks.iter() {
-        let chunk_url = format!("{}/api/servers/{}", meta_server_url, &chunk.server_id);
-        let server: ChunkServer = client
-            .get(&chunk_url)
-            .send()
-            .await
-            .context(FailedRequest { url: chunk_url })?
-            .json()
-            .await
-            .context(ParseJson)?;
+        let chunk_url = format!("{}/api/servers/{}", meta_url, &chunk.server_id);
+        let server: ChunkServer = get_request_json(&client, chunk_url).await?;
         let download_url = format!("{}/api/download/{}", server.address, &chunk.id);
-        let mut stream = client
-            .get(&download_url)
-            .send()
-            .await
-            .context(FailedRequest { url: download_url })?
-            .bytes_stream();
+        let mut stream = get_request(&client, download_url).await?.bytes_stream();
         while let Some(content) = stream.next().await {
             file.write(&content.unwrap()).await.context(FileIO {
                 path,
@@ -265,4 +219,23 @@ async fn download(
         }
     }
     Ok(())
+}
+
+async fn get_request(client: &Client, url: String) -> Result<Response> {
+    client.get(&url).send().await.context(FailedRequest { url })
+}
+async fn get_request_json<T: DeserializeOwned>(client: &Client, url: String) -> Result<T> {
+    get_request(client, url)
+        .await?
+        .json()
+        .await
+        .context(ParseJson)
+}
+async fn post_request<T: Serialize>(client: &Client, url: String, data: &T) -> Result<Response> {
+    client
+        .post(&url)
+        .json(data)
+        .send()
+        .await
+        .context(FailedRequest { url })
 }

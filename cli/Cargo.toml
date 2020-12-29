@@ -16,5 +16,4 @@ serde_yaml = "0.8"
 structopt = "0.3.21"
 reqwest = { version = "0.10.10", features = ["json", "stream"] }
 ccfs-commons = { path = "../ccfs-commons" }
-futures-util = { version = "0.3.8", default-features = false }
 snafu = "0.6.10"

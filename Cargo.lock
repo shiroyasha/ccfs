@@ -185,7 +185,6 @@ name = "cli"
 version = "0.1.0"
 dependencies = [
  "ccfs-commons",
- "futures-util",
  "reqwest",
  "serde",
  "serde_derive",

@@ -174,10 +174,7 @@ async fn download(chunk_id: Uuid) -> Option<Stream<File>> {
 
 #[catch(404)]
 fn not_found() -> JsonValue {
-    json!({
-        "status": "error",
-        "reason": "Resource was not found."
-    })
+    json!({ "status": "error", "reason": "Resource was not found." })
 }
 
 fn start_ping_job(address: String, metadata_url: String, server_id: String) {
