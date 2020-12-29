@@ -119,6 +119,7 @@ dependencies = [
  "rocket",
  "rocket_contrib",
  "serde",
+ "uuid",
 ]
 
 [[package]]
@@ -757,7 +758,6 @@ dependencies = [
  "ccfs-commons",
  "chrono",
  "lazy_static",
- "mut_static",
  "rocket",
  "rocket_contrib",
  "serde",

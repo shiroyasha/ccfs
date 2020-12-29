@@ -2,7 +2,7 @@ use chrono::{DateTime, Utc};
 use rocket::http::Status;
 use rocket::outcome::Outcome::*;
 use rocket::request::{self, FromRequest, Request};
-use rocket_contrib::uuid::{uuid_crate, Uuid};
+use rocket_contrib::uuid::Uuid;
 use serde::{Deserialize, Serialize};
 use std::str::FromStr;
 
@@ -115,7 +115,7 @@ pub struct File {
 impl File {
     pub fn new(name: String, size: u64) -> File {
         File {
-            id: Uuid::from_str(&uuid_crate::Uuid::new_v4().to_string()).unwrap(),
+            id: Uuid::from_str(&uuid::Uuid::new_v4().to_string()).unwrap(),
             name,
             size,
             num_of_chunks: (size / CHUNK_SIZE + 1) as u16,
@@ -138,7 +138,7 @@ pub struct Chunk {
 impl Chunk {
     pub fn new(file_id: Uuid, server_id: Uuid, file_part_num: u16) -> Chunk {
         Chunk {
-            id: Uuid::from_str(&uuid_crate::Uuid::new_v4().to_string()).unwrap(),
+            id: Uuid::from_str(&uuid::Uuid::new_v4().to_string()).unwrap(),
             file_id,
             server_id,
             file_part_num,
