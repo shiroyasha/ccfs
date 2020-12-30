@@ -19,3 +19,4 @@ ccfs-commons = { path = "../ccfs-commons" }
 snafu = "0.6.10"
 slice-group-by = "0.2.6"
 futures = "0.3.8"
+rand = "0.8.0"

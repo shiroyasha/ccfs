@@ -2,7 +2,9 @@ extern crate ccfs_commons;
 
 use ccfs_commons::{Chunk, ChunkServer, File, CHUNK_SIZE};
 use futures::future::join_all;
-use reqwest::{multipart::Part, Client, Response};
+use rand::{seq::SliceRandom, thread_rng};
+use reqwest::multipart::{Form, Part};
+use reqwest::{Client, Response};
 use serde::{de::DeserializeOwned, Serialize};
 use slice_group_by::GroupBy;
 use snafu::{ResultExt, Snafu};
@@ -42,7 +44,13 @@ enum Error {
     ChunkNotAvailable { chunk_id: Uuid },
 
     #[snafu(display("Failed to download some chunks"))]
-    ChunksNotAvailable,
+    SomeChunksNotAvailable,
+
+    #[snafu(display("Failed to upload some chunks"))]
+    UploadChunks,
+
+    #[snafu(display("File doesn't exist: {}", path.display()))]
+    FileNotExist { path: PathBuf },
 }
 
 #[derive(Debug)]
@@ -156,13 +164,14 @@ async fn upload<T: AsRef<Path>>(meta_url: &str, client: &Client, file_path: T) -
             .context(ParseJson)?;
         let servers_url = format!("{}/api/servers", meta_url);
         let servers: Vec<ChunkServer> = get_request_json(&client, servers_url).await?;
-        let mut iter = servers.iter().cycle();
         let mut f = FileFS::open(path).await.context(FileIO {
             path,
             action: FileAction::Open,
         })?;
 
-        for file_part in 0..=file_meta.len() / CHUNK_SIZE {
+        let parts_count = (file_meta.len() / CHUNK_SIZE) + 1;
+        let mut file_parts = Vec::with_capacity(parts_count as usize);
+        for file_part in 0..parts_count {
             let mut chunk = Vec::with_capacity(CHUNK_SIZE as usize);
             loop {
                 let mut buff_size = BUF_SIZE;
@@ -180,31 +189,53 @@ async fn upload<T: AsRef<Path>>(meta_url: &str, client: &Client, file_path: T) -
                     break;
                 }
             }
-            let form = reqwest::multipart::Form::new()
-                .text("file_id", file.id.to_string())
-                .text("file_part_num", file_part.to_string())
-                .part("file", Part::bytes(chunk));
-            let server = match iter.next() {
-                Some(server) => server,
-                None => panic!("No available chunk servers"),
-            };
-            let upload_url = format!("{}/api/upload", server.address);
-            let resp = client
-                .post(&upload_url)
-                .multipart(form)
-                .send()
-                .await
-                .context(FailedRequest { url: upload_url });
-            match resp {
-                Ok(r) => println!("response status code {:?}", r.status()),
-                Err(error) => println!("Failed ------> {:?}", error),
-            }
+            file_parts.push((file.id.to_string(), file_part.to_string(), chunk));
+        }
+        let requests = file_parts
+            .into_iter()
+            .map(|part| upload_chunk(client, &servers, part))
+            .collect::<Vec<_>>();
+        let responses = join_all(requests).await;
+        if responses.iter().filter(|resp| resp.is_err()).size_hint().0 > 0 {
+            return Err(Error::UploadChunks);
         }
         println!("Completed file upload");
+        return Ok(());
     } else {
-        panic!("The file {} doesn't exists", path.display());
+        return Err(Error::FileNotExist {
+            path: path.to_path_buf(),
+        });
     }
-    Ok(())
+}
+
+async fn upload_chunk(
+    client: &Client,
+    servers: &[ChunkServer],
+    form_data: (String, String, Vec<u8>),
+) -> Result<()> {
+    let (file_id, file_part, raw_data) = form_data;
+    let mut slice = servers.to_vec();
+    slice.shuffle(&mut thread_rng());
+    for server in servers {
+        let upload_url = format!("{}/api/upload", server.address);
+        let resp = client
+            .post(&upload_url)
+            .multipart(
+                Form::new()
+                    .text("file_id", file_id.clone())
+                    .text("file_part_num", file_part.clone())
+                    .part("file", Part::bytes(raw_data.clone())),
+            )
+            .send()
+            .await
+            .context(FailedRequest { url: upload_url })?;
+        if resp.status().is_success() {
+            return Ok(());
+        }
+    }
+    Err(Error::ChunkNotAvailable {
+        chunk_id: servers[0].id.into_inner(),
+    })
 }
 
 async fn download(
@@ -232,7 +263,7 @@ async fn download(
     let responses = join_all(requests).await;
     let errors = responses.iter().filter(|resp| resp.is_err());
     if errors.size_hint().0 > 0 {
-        return Err(Error::ChunksNotAvailable);
+        return Err(Error::SomeChunksNotAvailable);
     }
     let mut file_parts = responses
         .into_iter()
