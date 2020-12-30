@@ -17,3 +17,5 @@ structopt = "0.3.21"
 reqwest = { version = "0.10.10", features = ["json", "stream"] }
 ccfs-commons = { path = "../ccfs-commons" }
 snafu = "0.6.10"
+slice-group-by = "0.2.6"
+futures = "0.3.8"

@@ -1,8 +1,10 @@
 extern crate ccfs_commons;
 
 use ccfs_commons::{Chunk, ChunkServer, File, CHUNK_SIZE};
+use futures::future::join_all;
 use reqwest::{multipart::Part, Client, Response};
 use serde::{de::DeserializeOwned, Serialize};
+use slice_group_by::GroupBy;
 use snafu::{ResultExt, Snafu};
 use std::collections::HashMap;
 use std::fmt;
@@ -11,6 +13,7 @@ use structopt::StructOpt;
 use tokio::fs::File as FileFS;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::stream::StreamExt;
+use uuid::Uuid;
 
 const BUF_SIZE: usize = 16384;
 
@@ -34,6 +37,12 @@ enum Error {
         path: PathBuf,
         action: FileAction,
     },
+
+    #[snafu(display("Chunk {} is currently not available", chunk_id))]
+    ChunkNotAvailable { chunk_id: Uuid },
+
+    #[snafu(display("Failed to download some chunks"))]
+    ChunksNotAvailable,
 }
 
 #[derive(Debug)]
@@ -208,19 +217,32 @@ async fn download(
     let file_url = format!("{}/api/files?path={}", meta_url, path.display());
     let file: File = get_request_json(&client, file_url).await?;
     let chunks_url = format!("{}/api/chunks/file/{}", meta_url, &file.id);
-    let mut chunks: Vec<Chunk> = get_request_json(&client, chunks_url).await?;
-    chunks.sort_by(|a, b| a.file_part_num.cmp(&b.file_part_num));
+    let chunks: Vec<Chunk> = get_request_json(&client, chunks_url).await?;
+    let groups = chunks.linear_group_by(|a, b| a.file_part_num == b.file_part_num);
     let default_path = format!("./{}", file.name);
     let path = target_path.unwrap_or_else(|| Path::new(&default_path));
     let mut file = FileFS::create(path).await.context(FileIO {
         path,
         action: FileAction::Create,
     })?;
-    for chunk in chunks.iter() {
-        let chunk_url = format!("{}/api/servers/{}", meta_url, &chunk.server_id);
-        let server: ChunkServer = get_request_json(&client, chunk_url).await?;
-        let download_url = format!("{}/api/download/{}", server.address, &chunk.id);
-        let mut stream = get_request(&client, download_url).await?.bytes_stream();
+    let mut requests = Vec::with_capacity(groups.size_hint().0);
+    for group in groups {
+        requests.push(download_chunk(client, group, meta_url));
+    }
+    let responses = join_all(requests).await;
+    let errors = responses.iter().filter(|resp| resp.is_err());
+    if errors.size_hint().0 > 0 {
+        return Err(Error::ChunksNotAvailable);
+    }
+    let mut file_parts = responses
+        .into_iter()
+        .map(|resp| {
+            let (order, resp) = resp.unwrap();
+            (order, resp.bytes_stream())
+        })
+        .collect::<Vec<_>>();
+    file_parts.sort_by(|a, b| a.0.cmp(&b.0));
+    for (_part, mut stream) in file_parts {
         while let Some(content) = stream.next().await {
             file.write(&content.unwrap()).await.context(FileIO {
                 path,
@@ -229,6 +251,28 @@ async fn download(
         }
     }
     Ok(())
+}
+
+async fn download_chunk(
+    client: &Client,
+    servers: &[Chunk],
+    meta_url: &str,
+) -> Result<(u16, Response)> {
+    for chunk in servers {
+        let chunk_url = format!("{}/api/servers/{}", meta_url, &chunk.server_id);
+        let resp: Response = get_request(&client, chunk_url).await?;
+        if resp.status().is_success() {
+            let server: ChunkServer = resp.json().await.context(ParseJson)?;
+            let download_url = format!("{}/api/download/{}", server.address, &chunk.id);
+            let download_resp = get_request(&client, download_url).await?;
+            if download_resp.status().is_success() {
+                return Ok((chunk.file_part_num, download_resp));
+            }
+        }
+    }
+    Err(Error::ChunkNotAvailable {
+        chunk_id: servers[0].id.into_inner(),
+    })
 }
 
 async fn get_request(client: &Client, url: String) -> Result<Response> {
