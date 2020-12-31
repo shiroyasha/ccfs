@@ -6,7 +6,6 @@ extern crate lazy_static;
 extern crate rocket_contrib;
 extern crate ccfs_commons;
 extern crate dirs;
-extern crate mut_static;
 extern crate rocket_multipart_form_data;
 
 use ccfs_commons::{Chunk, CHUNK_SIZE};
