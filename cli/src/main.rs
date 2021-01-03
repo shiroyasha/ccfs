@@ -1,6 +1,6 @@
 extern crate ccfs_commons;
 
-use ccfs_commons::{Chunk, ChunkServer, File, CHUNK_SIZE};
+use ccfs_commons::{Chunk, ChunkServer, File, FileInfo, FileMetadata, CHUNK_SIZE};
 use futures::future::join_all;
 use rand::{seq::SliceRandom, thread_rng};
 use reqwest::multipart::{Form, Part};
@@ -12,7 +12,7 @@ use std::collections::HashMap;
 use std::fmt;
 use std::path::{Path, PathBuf};
 use structopt::StructOpt;
-use tokio::fs::File as FileFS;
+use tokio::fs::{create_dir, File as FileFS};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::stream::StreamExt;
 use uuid::Uuid;
@@ -136,10 +136,10 @@ async fn main() -> Result<()> {
 
     match opts.cmd {
         Command::Upload { file_path } => {
-            upload(&meta_server_url, &client, &file_path).await?;
+            upload(&client, &meta_server_url, &file_path).await?;
         }
         Command::Download { file_path } => {
-            download(&meta_server_url, &client, Path::new(&file_path), None).await?;
+            download(&client, &meta_server_url, &file_path, None).await?;
         }
         Command::Remove { file_path: _path } => {
             unimplemented!("Not implemented yet :(")
@@ -148,20 +148,55 @@ async fn main() -> Result<()> {
     Ok(())
 }
 
-async fn upload<T: AsRef<Path>>(meta_url: &str, client: &Client, file_path: T) -> Result<()> {
-    let path = file_path.as_ref();
-    if path.exists() && !path.is_dir() {
-        let file_meta = path.metadata().context(ReadMetadata { path })?;
-        let file_data = File::new(
-            path.file_name().unwrap().to_str().unwrap().to_string(),
-            file_meta.len(),
-        );
-        let upload_url = format!("{}/api/files/upload", meta_url);
-        let file: File = post_request(&client, upload_url, &file_data)
-            .await?
-            .json()
-            .await
-            .context(ParseJson)?;
+async fn upload<T: AsRef<Path>>(client: &Client, meta_url: &str, file_path: T) -> Result<()> {
+    let path = file_path.as_ref().to_path_buf();
+    if path.exists() {
+        let path_prefix = path.ancestors().nth(1).unwrap().to_path_buf();
+        let mut paths = vec![path];
+        while !paths.is_empty() {
+            let curr = paths.pop().unwrap();
+            upload_item(client, meta_url, curr.as_path(), &path_prefix).await?;
+            if curr.is_dir() {
+                paths.extend(
+                    curr.read_dir()
+                        .context(FileIO {
+                            path: curr.clone(),
+                            action: FileAction::Open,
+                        })?
+                        .filter_map(|item| item.ok())
+                        .map(|item| item.path()),
+                );
+            }
+        }
+        Ok(())
+    } else {
+        Err(Error::FileNotExist { path })
+    }
+}
+
+async fn upload_item(
+    client: &Client,
+    meta_url: &str,
+    path: &Path,
+    path_prefix: &Path,
+) -> Result<()> {
+    let file_meta = path.metadata().context(ReadMetadata { path })?;
+    let file_name = path.file_name().unwrap().to_str().unwrap().to_string();
+    let file_data = match file_meta.is_dir() {
+        true => FileMetadata::create_dir(file_name),
+        false => FileMetadata::create_file(file_name, file_meta.len()),
+    };
+    let upload_url = format!(
+        "{}/api/files/upload?path={}",
+        meta_url,
+        path.strip_prefix(path_prefix).unwrap().display()
+    );
+    let file: FileMetadata = post_request(&client, upload_url, &file_data)
+        .await?
+        .json()
+        .await
+        .context(ParseJson)?;
+    if let FileInfo::File(file_info) = file.file_info {
         let servers_url = format!("{}/api/servers", meta_url);
         let servers: Vec<ChunkServer> = get_request_json(&client, servers_url).await?;
         let mut f = FileFS::open(path).await.context(FileIO {
@@ -189,7 +224,7 @@ async fn upload<T: AsRef<Path>>(meta_url: &str, client: &Client, file_path: T) -
                     break;
                 }
             }
-            file_parts.push((file.id.to_string(), file_part.to_string(), chunk));
+            file_parts.push((file_info.id.to_string(), file_part.to_string(), chunk));
         }
         let requests = file_parts
             .into_iter()
@@ -200,12 +235,8 @@ async fn upload<T: AsRef<Path>>(meta_url: &str, client: &Client, file_path: T) -
             return Err(Error::UploadChunks);
         }
         println!("Completed file upload");
-        return Ok(());
-    } else {
-        return Err(Error::FileNotExist {
-            path: path.to_path_buf(),
-        });
     }
+    return Ok(());
 }
 
 async fn upload_chunk(
@@ -238,20 +269,53 @@ async fn upload_chunk(
     })
 }
 
-async fn download(
-    meta_url: &str,
+async fn download<T: AsRef<Path>>(
     client: &Client,
-    path: &Path,
+    meta_url: &str,
+    path: T,
     target_path: Option<&Path>,
 ) -> Result<()> {
     // get chunks and merge them into a file
-    let file_url = format!("{}/api/files?path={}", meta_url, path.display());
-    let file: File = get_request_json(&client, file_url).await?;
+    let file_url = format!("{}/api/files?path={}", meta_url, path.as_ref().display());
+    let file: FileMetadata = get_request_json(&client, file_url).await?;
+    let path = target_path.unwrap_or_else(|| Path::new(".")).to_path_buf();
+    let mut items = vec![(file, path)];
+    while !items.is_empty() {
+        let (curr_f, curr_path) = items.pop().unwrap();
+        match curr_f.file_info {
+            FileInfo::Directory(name) => {
+                let new_path = curr_path.join(name);
+                create_dir(&new_path).await.context(FileIO {
+                    path: new_path.clone(),
+                    action: FileAction::Create,
+                })?;
+                items.extend(
+                    &mut curr_f
+                        .children
+                        .into_iter()
+                        .map(|(_, f)| (f, new_path.clone())),
+                );
+            }
+            FileInfo::File(f) => {
+                download_file(client, meta_url, f, &curr_path).await?;
+            }
+        }
+    }
+    Ok(())
+}
+
+async fn download_file(
+    client: &Client,
+    meta_url: &str,
+    file: File,
+    target_dir: &Path,
+) -> Result<()> {
     let chunks_url = format!("{}/api/chunks/file/{}", meta_url, &file.id);
-    let chunks: Vec<Chunk> = get_request_json(&client, chunks_url).await?;
+    let target_path = target_dir.join(file.name);
+    let path = target_path.as_path();
+    let mut chunks: Vec<Chunk> = get_request_json(&client, chunks_url).await?;
+    chunks.sort_by_key(|a| a.file_part_num);
     let groups = chunks.linear_group_by(|a, b| a.file_part_num == b.file_part_num);
-    let default_path = format!("./{}", file.name);
-    let path = target_path.unwrap_or_else(|| Path::new(&default_path));
     let mut file = FileFS::create(path).await.context(FileIO {
         path,
         action: FileAction::Create,
@@ -265,15 +329,10 @@ async fn download(
     if errors.size_hint().0 > 0 {
         return Err(Error::SomeChunksNotAvailable);
     }
-    let mut file_parts = responses
+    for mut stream in responses
         .into_iter()
-        .map(|resp| {
-            let (order, resp) = resp.unwrap();
-            (order, resp.bytes_stream())
-        })
-        .collect::<Vec<_>>();
-    file_parts.sort_by(|a, b| a.0.cmp(&b.0));
-    for (_part, mut stream) in file_parts {
+        .map(|resp| resp.unwrap().bytes_stream())
+    {
         while let Some(content) = stream.next().await {
             file.write(&content.unwrap()).await.context(FileIO {
                 path,
@@ -284,11 +343,7 @@ async fn download(
     Ok(())
 }
 
-async fn download_chunk(
-    client: &Client,
-    servers: &[Chunk],
-    meta_url: &str,
-) -> Result<(u16, Response)> {
+async fn download_chunk(client: &Client, servers: &[Chunk], meta_url: &str) -> Result<Response> {
     for chunk in servers {
         let chunk_url = format!("{}/api/servers/{}", meta_url, &chunk.server_id);
         let resp: Response = get_request(&client, chunk_url).await?;
@@ -297,7 +352,7 @@ async fn download_chunk(
             let download_url = format!("{}/api/download/{}", server.address, &chunk.id);
             let download_resp = get_request(&client, download_url).await?;
             if download_resp.status().is_success() {
-                return Ok((chunk.file_part_num, download_resp));
+                return Ok(download_resp);
             }
         }
     }

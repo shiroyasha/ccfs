@@ -97,13 +97,13 @@ impl Default for FileStatus {
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct FileMetadata {
-    file_info: FileInfo,
-    children: BTreeMap<String, FileMetadata>,
-    version: usize,
+    pub file_info: FileInfo,
+    pub children: BTreeMap<String, FileMetadata>,
+    pub version: usize,
     #[serde(with = "custom_time")]
-    created_at: DateTime<Utc>,
+    pub created_at: DateTime<Utc>,
     #[serde(with = "custom_time")]
-    modified_at: DateTime<Utc>,
+    pub modified_at: DateTime<Utc>,
 }
 
 impl FileMetadata {
@@ -133,12 +133,27 @@ impl FileMetadata {
         }
     }
 
-    pub fn traverse(&mut self, path: &str) -> Result<&mut Self, Box<dyn Error>> {
+    pub fn traverse(&self, path: &str) -> Result<&Self, Box<dyn Error>> {
         let mut curr = self;
-        for segment in path.split_terminator('/') {
-            match curr.children.get_mut(segment) {
-                Some(next) => curr = next,
-                None => return Err(format!("path {} doesn't exist", path).into()),
+        if !path.is_empty() {
+            for segment in path.split_terminator('/') {
+                match curr.children.get(segment) {
+                    Some(next) => curr = next,
+                    None => return Err(format!("path {} doesn't exist", path).into()),
+                }
+            }
+        }
+        Ok(curr)
+    }
+
+    pub fn traverse_mut(&mut self, path: &str) -> Result<&mut Self, Box<dyn Error>> {
+        let mut curr = self;
+        if !path.is_empty() {
+            for segment in path.split_terminator('/') {
+                match curr.children.get_mut(segment) {
+                    Some(next) => curr = next,
+                    None => return Err(format!("path {} doesn't exist", path).into()),
+                }
             }
         }
         Ok(curr)
@@ -322,10 +337,10 @@ mod tests {
         trie.insert_dir("dir1");
         trie.insert_dir("dir2");
         trie.insert_file("some.zip", 0);
-        let dir2 = trie.traverse("dir2")?;
+        let dir2 = trie.traverse_mut("dir2")?;
         dir2.insert_file("test.txt", 10);
         dir2.insert_dir("subdir");
-        let subdir = dir2.traverse("subdir")?;
+        let subdir = dir2.traverse_mut("subdir")?;
         subdir.insert_dir("tmp");
         subdir.insert_file("file", 100);
 
@@ -343,8 +358,7 @@ mod tests {
 
     #[test]
     fn trie_print_current_dir_test() -> Result<(), Box<dyn Error>> {
-        let mut trie = build()?;
-
+        let trie = build()?;
         assert_eq!(trie.print_current_dir(), "dir1\ndir2\nsome.zip");
         assert_eq!(trie.traverse("dir1")?.print_current_dir(), "");
         assert_eq!(

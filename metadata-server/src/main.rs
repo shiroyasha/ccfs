@@ -6,7 +6,7 @@ extern crate lazy_static;
 extern crate rocket_contrib;
 extern crate ccfs_commons;
 
-use ccfs_commons::{Chunk, ChunkServer, File, FileStatus};
+use ccfs_commons::{Chunk, ChunkServer, File, FileInfo, FileMetadata, FileStatus};
 use chrono::{DateTime, Duration, Utc};
 use rocket_contrib::json::{Json, JsonValue};
 use rocket_contrib::uuid::uuid_crate as uuid;
@@ -15,15 +15,16 @@ use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
 
 lazy_static! {
-    // should be replaced with DB
-    static ref CHUNK_SERVERS:
-        Arc<RwLock<HashMap<uuid::Uuid, ChunkServer>>> = Arc::new(RwLock::new(HashMap::new()));
-    static ref FILES:
-        Arc<RwLock<HashMap<uuid::Uuid, File>>> = Arc::new(RwLock::new(HashMap::new()));
-    static ref FILE_NAMES:
-        Arc<RwLock<HashMap<String, uuid::Uuid>>> = Arc::new(RwLock::new(HashMap::new()));
-    static ref CHUNKS:
-        Arc<RwLock<HashMap<uuid::Uuid, Chunk>>> = Arc::new(RwLock::new(HashMap::new()));
+    static ref CHUNK_SERVERS: Arc<RwLock<HashMap<uuid::Uuid, ChunkServer>>> =
+        Arc::new(RwLock::new(HashMap::new()));
+    static ref FILES: Arc<RwLock<HashMap<uuid::Uuid, File>>> =
+        Arc::new(RwLock::new(HashMap::new()));
+    static ref FILE_NAMES: Arc<RwLock<FileMetadata>> = {
+        // read from file or create new
+        Arc::new(RwLock::new(FileMetadata::create_root()))
+    };
+    static ref CHUNKS: Arc<RwLock<HashMap<uuid::Uuid, Chunk>>> =
+        Arc::new(RwLock::new(HashMap::new()));
 }
 
 /// Returns a list of available chunk servers where the file chunks can be uploaded
@@ -76,14 +77,25 @@ fn chunk_server_ping(header_info: ChunkServer) -> JsonValue {
 }
 
 /// Creates a file entity with basic file info
-#[post("/files/upload", format = "json", data = "<file_info>")]
-fn create_file(file_info: Json<File>) -> JsonValue {
+#[post("/files/upload?<path>", format = "json", data = "<file_info>")]
+fn create_file(file_info: Json<FileMetadata>, path: String) -> JsonValue {
     let file = file_info.into_inner();
     let mut files_map = FILES.write().unwrap();
-    let mut file_names_map = FILE_NAMES.write().unwrap();
-    let id = file.id.into_inner();
-    files_map.insert(id, file.clone());
-    file_names_map.insert(file.name.clone(), id);
+    let mut file_names_tree = FILE_NAMES.write().unwrap();
+    let (dir_path, _) = path.split_at(path.rfind('/').unwrap_or(0));
+    let target = file_names_tree
+        .traverse_mut(&dir_path)
+        .unwrap_or_else(|err| panic!("{:?}", err));
+    match &file.file_info {
+        FileInfo::Directory(name) => {
+            target.children.insert(name.clone(), file.clone());
+        }
+        FileInfo::File(f) => {
+            let id = f.id.into_inner();
+            target.children.insert(f.name.clone(), file.clone());
+            files_map.insert(id, f.clone());
+        }
+    }
 
     json!(file)
 }
@@ -92,10 +104,8 @@ fn create_file(file_info: Json<File>) -> JsonValue {
 #[get("/files?<path>")]
 fn get_file(path: String) -> JsonValue {
     let file_names_map = FILE_NAMES.read().unwrap();
-    let file_id = file_names_map.get(&path).unwrap();
-    let files_map = FILES.read().unwrap();
-    let file = files_map.get(file_id).unwrap();
-    json!(*file)
+    let files = file_names_map.traverse(&path).unwrap();
+    json!(files)
 }
 
 /// Notifies the metadata server to mark the chunk as completed
