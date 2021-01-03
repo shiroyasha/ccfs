@@ -12,33 +12,29 @@ pub const CHUNK_SIZE: u64 = 64000000;
 
 pub mod custom_uuid {
     use rocket_contrib::uuid::Uuid;
-    use serde::{de::Error, Deserialize, Deserializer, Serialize, Serializer};
+    use serde::{de::Error, Deserialize, Deserializer, Serializer};
     use std::str::FromStr;
 
-    pub fn serialize<S: Serializer>(val: &'_ Uuid, serializer: S) -> Result<S::Ok, S::Error> {
-        val.to_string().serialize(serializer)
+    pub fn serialize<S: Serializer>(val: &'_ Uuid, ser: S) -> Result<S::Ok, S::Error> {
+        ser.serialize_str(&val.to_string())
     }
 
-    pub fn deserialize<'de, D: Deserializer<'de>>(deserializer: D) -> Result<Uuid, D::Error> {
-        let val: &str = Deserialize::deserialize(deserializer)?;
+    pub fn deserialize<'de, D: Deserializer<'de>>(deser: D) -> Result<Uuid, D::Error> {
+        let val: &str = Deserialize::deserialize(deser)?;
         Uuid::from_str(val).map_err(D::Error::custom)
     }
 }
 
 pub mod custom_time {
     use chrono::{DateTime, NaiveDateTime, Utc};
-    use serde::{Deserialize, Deserializer, Serialize, Serializer};
+    use serde::{Deserialize, Deserializer, Serializer};
 
-    pub fn serialize<S: Serializer>(val: &DateTime<Utc>, serializer: S) -> Result<S::Ok, S::Error> {
-        val.timestamp().to_string().serialize(serializer)
+    pub fn serialize<S: Serializer>(val: &DateTime<Utc>, ser: S) -> Result<S::Ok, S::Error> {
+        ser.serialize_i64(val.timestamp())
     }
 
-    pub fn deserialize<'de, D: Deserializer<'de>>(
-        deserializer: D,
-    ) -> Result<DateTime<Utc>, D::Error> {
-        let s = String::deserialize(deserializer)?
-            .parse()
-            .map_err(serde::de::Error::custom)?;
+    pub fn deserialize<'de, D: Deserializer<'de>>(deser: D) -> Result<DateTime<Utc>, D::Error> {
+        let s: i64 = Deserialize::deserialize(deser)?;
         Ok(DateTime::from_utc(NaiveDateTime::from_timestamp(s, 0), Utc))
     }
 }
@@ -48,7 +44,6 @@ pub struct ChunkServer {
     #[serde(with = "custom_uuid")]
     pub id: Uuid,
     pub address: String,
-    pub is_active: bool,
     #[serde(with = "custom_time")]
     pub latest_ping_time: DateTime<Utc>,
 }
@@ -57,8 +52,7 @@ impl ChunkServer {
         ChunkServer {
             id,
             address,
-            is_active: true,
-            latest_ping_time: DateTime::from_utc(Utc::now().naive_utc(), Utc),
+            latest_ping_time: Utc::now(),
         }
     }
 }
@@ -141,14 +135,11 @@ impl FileMetadata {
 
     pub fn traverse(&mut self, path: &str) -> Result<&mut Self, Box<dyn Error>> {
         let mut curr = self;
-        let path_items = path.split_terminator('/').collect::<Vec<_>>();
-        let mut remaining_path = path_items.get(..).unwrap();
-        while !remaining_path.is_empty() {
-            match curr.children.get_mut(remaining_path[0]) {
+        for segment in path.split_terminator('/') {
+            match curr.children.get_mut(segment) {
                 Some(next) => curr = next,
                 None => return Err(format!("path {} doesn't exist", path).into()),
             }
-            remaining_path = remaining_path.get(1..).unwrap();
         }
         Ok(curr)
     }
