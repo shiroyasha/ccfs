@@ -103,6 +103,10 @@ enum Command {
         /// The path of the file on CCFS
         file_path: String,
     },
+    /// List directory content
+    List,
+    /// Print directory tree structure
+    Tree,
 }
 
 #[tokio::main]
@@ -129,22 +133,32 @@ async fn main() -> Result<()> {
         })?;
     let config_map: HashMap<String, String> =
         serde_yaml::from_str(&content).expect("Couldn't deserialize config yaml");
-    let meta_server_url = config_map
+    let meta_url = config_map
         .get("metadata-server-url")
         .expect("Couldn't find metadata-server-url config");
     let client = Client::new();
 
     match opts.cmd {
-        Command::Upload { file_path } => {
-            upload(&client, &meta_server_url, &file_path).await?;
-        }
-        Command::Download { file_path } => {
-            download(&client, &meta_server_url, &file_path, None).await?;
-        }
-        Command::Remove { file_path: _path } => {
-            unimplemented!("Not implemented yet :(")
-        }
+        Command::Upload { file_path } => upload(&client, &meta_url, &file_path).await?,
+        Command::Download { file_path } => download(&client, &meta_url, &file_path, None).await?,
+        Command::Remove { file_path: _path } => unimplemented!("Not implemented yet :("),
+        Command::List => list(&client, &meta_url).await?,
+        Command::Tree => tree(&client, &meta_url).await?,
     }
+    Ok(())
+}
+
+async fn list(client: &Client, meta_url: &str) -> Result<()> {
+    let file_url = format!("{}/api/files", meta_url);
+    let file: FileMetadata = get_request_json(&client, file_url).await?;
+    println!("{}", file.print_current_dir());
+    Ok(())
+}
+
+async fn tree(client: &Client, meta_url: &str) -> Result<()> {
+    let file_url = format!("{}/api/files", meta_url);
+    let file: FileMetadata = get_request_json(&client, file_url).await?;
+    println!("{}", file.print_subtree());
     Ok(())
 }
 

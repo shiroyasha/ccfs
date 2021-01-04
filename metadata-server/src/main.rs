@@ -102,9 +102,11 @@ fn create_file(file_info: Json<FileMetadata>, path: String) -> JsonValue {
 
 /// Returns the file info
 #[get("/files?<path>")]
-fn get_file(path: String) -> JsonValue {
+fn get_file(path: Option<String>) -> JsonValue {
     let file_names_map = FILE_NAMES.read().unwrap();
-    let files = file_names_map.traverse(&path).unwrap();
+    let files = file_names_map
+        .traverse(&path.unwrap_or_else(String::new))
+        .unwrap();
     json!(files)
 }
 
