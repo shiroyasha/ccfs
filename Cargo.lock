@@ -153,7 +153,6 @@ version = "0.1.0"
 dependencies = [
  "ccfs-commons",
  "dirs",
- "lazy_static",
  "reqwest",
  "rocket",
  "rocket-multipart-form-data",
