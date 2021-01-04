@@ -24,7 +24,7 @@ pub async fn multipart_upload(
     content_type: &ContentType,
     data: Data,
 ) -> Result<JsonValue> {
-    let path = &uploads_dir.0;
+    let path = uploads_dir.inner();
     if !path.exists() {
         fs::create_dir(path)
             .await
@@ -56,7 +56,7 @@ pub async fn multipart_upload(
         text: file_part_text,
     })?;
 
-    let chunk = Chunk::new(file_id, server_id.0, file_part_num);
+    let chunk = Chunk::new(file_id, *server_id.inner(), file_part_num);
     let new_path = path.join(chunk.id.to_string());
     let mut f = File::create(&new_path)
         .await
@@ -66,7 +66,7 @@ pub async fn multipart_upload(
         .context(errors::IOWrite { path: new_path })?;
 
     let _resp = reqwest::Client::new()
-        .post(&format!("{}/api/chunk/completed", metadata_url.0))
+        .post(&format!("{}/api/chunk/completed", metadata_url.inner()))
         .json(&chunk)
         .send()
         .await
@@ -76,8 +76,7 @@ pub async fn multipart_upload(
 
 #[get("/download/<chunk_id>")]
 pub async fn download(chunk_id: Uuid, uploads_dir: State<'_, UploadsDir>) -> Option<Stream<File>> {
-    let path = &uploads_dir.0;
-    let file_path = path.join(chunk_id.to_string());
+    let file_path = uploads_dir.join(chunk_id.to_string());
     File::open(file_path).await.map(Stream::from).ok()
 }
 

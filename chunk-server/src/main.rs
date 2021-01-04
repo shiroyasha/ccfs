@@ -20,9 +20,9 @@ use tokio::time::{delay_for, Duration};
 const METADATA_URL_KEY: &str = "METADATA_URL";
 const SERVER_ID_KEY: &str = "SERVER_ID";
 
-pub struct MetadataUrl(String);
-pub struct ServerID(Uuid);
-pub struct UploadsDir(PathBuf);
+pub type MetadataUrl = String;
+pub type ServerID = Uuid;
+pub type UploadsDir = PathBuf;
 
 async fn start_ping_job(address: String, metadata_url: String, server_id: String) {
     loop {
@@ -38,21 +38,21 @@ async fn start_ping_job(address: String, metadata_url: String, server_id: String
 
 #[launch]
 fn rocket() -> rocket::Rocket {
-    let metadata_url = env::var(METADATA_URL_KEY)
+    let metadata_url: MetadataUrl = env::var(METADATA_URL_KEY)
         .unwrap_or_else(|_| panic!("missing {} env variable", METADATA_URL_KEY));
     let server_id = env::var(SERVER_ID_KEY)
         .unwrap_or_else(|_| panic!("missing {} env variable", SERVER_ID_KEY));
-    let upload_path = dirs::home_dir()
+    let id: ServerID = Uuid::from_str(&server_id).expect("Server ID is not valid");
+
+    let upload_path: UploadsDir = dirs::home_dir()
         .expect("Couldn't determine home dir")
         .join("ccfs-uploads");
 
     let inst = rocket::ignite()
         .mount("/api", routes![multipart_upload, download])
-        .manage(MetadataUrl(metadata_url.clone()))
-        .manage(ServerID(
-            Uuid::from_str(&server_id).expect("Server ID is not valid"),
-        ))
-        .manage(UploadsDir(upload_path));
+        .manage(metadata_url.clone())
+        .manage(id)
+        .manage(upload_path);
     let server_addr = format!("http://{}:{}", inst.config().address, inst.config().port);
     task::spawn(start_ping_job(server_addr, metadata_url, server_id));
 
