@@ -763,7 +763,6 @@ version = "0.1.0"
 dependencies = [
  "ccfs-commons",
  "chrono",
- "lazy_static",
  "rocket",
  "rocket_contrib",
  "serde",
