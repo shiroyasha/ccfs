@@ -3,6 +3,8 @@ use std::fmt;
 use std::path::PathBuf;
 use uuid::Uuid;
 
+pub type Result<T, E = Error> = std::result::Result<T, E>;
+
 #[derive(Debug, Snafu)]
 #[snafu(visibility = "pub(crate)")]
 pub enum Error {
@@ -43,8 +45,8 @@ pub enum Error {
     #[snafu(display("{} is a directory", path.display()))]
     NotAFile { path: PathBuf },
 
-    #[snafu(display("Missing config value {}", name))]
-    MissingConfigVal { name: String },
+    #[snafu(display("Missing config value {}", key))]
+    MissingConfigVal { key: String },
 }
 
 #[derive(Debug)]

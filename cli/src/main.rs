@@ -2,7 +2,7 @@ extern crate ccfs_commons;
 mod errors;
 mod file_ops;
 
-use errors::{Error, FileAction};
+use errors::{FileAction, Result};
 use file_ops::{download, list, tree, upload};
 use reqwest::Client;
 use snafu::ResultExt;
@@ -48,17 +48,15 @@ enum Command {
     Tree,
 }
 
-pub type Result<T, E = Error> = std::result::Result<T, E>;
-
 #[tokio::main]
 async fn main() -> Result<()> {
     let opts = CliOpts::from_args();
     let path = Path::new(&opts.config);
     if !path.exists() {
-        return Err(Error::FileNotExist { path: path.into() });
+        return Err(errors::FileNotExist { path }.build());
     }
     if path.is_dir() {
-        return Err(Error::NotAFile { path: path.into() });
+        return Err(errors::NotAFile { path }.build());
     }
 
     let mut config_file = FileFS::open(path).await.context(errors::FileIO {
@@ -74,11 +72,10 @@ async fn main() -> Result<()> {
         })?;
     let config_map: HashMap<String, String> =
         serde_yaml::from_str(&content).context(errors::ParseYaml)?;
+    let key = "metadata-server-url";
     let meta_url = config_map
-        .get("metadata-server-url")
-        .ok_or(Error::MissingConfigVal {
-            name: "metadata-server-url".into(),
-        })?;
+        .get(key)
+        .ok_or_else(|| errors::MissingConfigVal { key }.build())?;
 
     let client = Client::new();
     match opts.cmd {
