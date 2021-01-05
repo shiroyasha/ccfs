@@ -155,7 +155,7 @@ pub async fn upload_chunk(
         }
     }
     Err(Error::ChunkNotAvailable {
-        chunk_id: servers[0].id.into_inner(),
+        chunk_id: servers[0].id,
     })
 }
 
@@ -253,7 +253,7 @@ pub async fn download_chunk(
         }
     }
     Err(Error::ChunkNotAvailable {
-        chunk_id: servers[0].id.into_inner(),
+        chunk_id: servers[0].id,
     })
 }
 

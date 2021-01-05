@@ -49,7 +49,7 @@ pub fn chunk_server_ping(
     match chunk_servers.write() {
         Ok(mut servers_map) => {
             let server = servers_map
-                .entry(server_id.into_inner())
+                .entry(server_id)
                 .or_insert_with(|| ChunkServer::new(server_id, server_addr));
             server.latest_ping_time = DateTime::from_utc(Utc::now().naive_utc(), Utc);
             json!(*server)
@@ -78,7 +78,7 @@ pub fn create_file(
             target.children.insert(name.clone(), file.clone());
         }
         FileInfo::File(f) => {
-            let id = f.id.into_inner();
+            let id = f.id;
             target.children.insert(f.name.clone(), file.clone());
             files_map.insert(id, f.clone());
         }
@@ -110,9 +110,9 @@ pub fn signal_chuck_upload_completed(
     match (chunks.write(), files.write()) {
         (Ok(mut chunks_map), Ok(mut files_map)) => {
             let chunk = chunk_info.into_inner();
-            match files_map.get_mut(&chunk.file_id.into_inner()) {
+            match files_map.get_mut(&chunk.file_id) {
                 Some(file) => {
-                    chunks_map.insert(chunk.id.into_inner(), chunk);
+                    chunks_map.insert(chunk.id, chunk);
 
                     file.num_of_completed_chunks += 1;
                     if file.num_of_completed_chunks == file.num_of_chunks {
@@ -139,7 +139,7 @@ pub fn get_chunks(file_id: Uuid, chunks: State<'_, ChunksMap>) -> JsonValue {
     match chunks.read() {
         Ok(chunks_map) => json!(chunks_map
             .values()
-            .filter(|c| c.file_id == file_id)
+            .filter(|c| c.file_id == file_id.into_inner())
             .copied()
             .collect::<Vec<Chunk>>()),
         Err(_) => json!({ "status": "error", "reason": "Unexpected error, try again" }),

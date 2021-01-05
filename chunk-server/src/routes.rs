@@ -6,7 +6,7 @@ use rocket::http::ContentType;
 use rocket::response::Stream;
 use rocket::{Data, State};
 use rocket_contrib::json::JsonValue;
-use rocket_contrib::uuid::Uuid;
+use rocket_contrib::uuid::{uuid_crate as uuid, Uuid};
 use rocket_multipart_form_data::{
     MultipartFormData, MultipartFormDataField, MultipartFormDataOptions,
 };
@@ -50,7 +50,7 @@ pub async fn multipart_upload(
     let file = &get_multipart_field_data(&multipart_form_data.raw, "file")?[0];
 
     let file_id =
-        Uuid::from_str(&file_id_text).context(errors::ParseUuid { text: file_id_text })?;
+        uuid::Uuid::from_str(&file_id_text).context(errors::ParseUuid { text: file_id_text })?;
 
     let file_part_num = file_part_text.parse().context(errors::ParseNumber {
         text: file_part_text,

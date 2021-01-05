@@ -9,7 +9,7 @@ extern crate rocket_multipart_form_data;
 mod errors;
 mod routes;
 
-use rocket_contrib::uuid::Uuid;
+use rocket_contrib::uuid::uuid_crate::Uuid;
 use routes::{download, multipart_upload};
 use std::env;
 use std::path::PathBuf;

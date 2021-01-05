@@ -2,28 +2,13 @@ use chrono::{DateTime, Utc};
 use rocket::http::Status;
 use rocket::outcome::Outcome::*;
 use rocket::request::{self, FromRequest, Request};
-use rocket_contrib::uuid::Uuid;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::error::Error;
 use std::str::FromStr;
+use uuid::Uuid;
 
 pub const CHUNK_SIZE: u64 = 64000000;
-
-pub mod custom_uuid {
-    use rocket_contrib::uuid::Uuid;
-    use serde::{de::Error, Deserialize, Deserializer, Serializer};
-    use std::str::FromStr;
-
-    pub fn serialize<S: Serializer>(val: &'_ Uuid, ser: S) -> Result<S::Ok, S::Error> {
-        ser.serialize_str(&val.to_string())
-    }
-
-    pub fn deserialize<'de, D: Deserializer<'de>>(deser: D) -> Result<Uuid, D::Error> {
-        let val: &str = Deserialize::deserialize(deser)?;
-        Uuid::from_str(val).map_err(D::Error::custom)
-    }
-}
 
 pub mod custom_time {
     use chrono::{DateTime, NaiveDateTime, Utc};
@@ -41,7 +26,6 @@ pub mod custom_time {
 
 #[derive(Clone, Serialize, Deserialize, Debug)]
 pub struct ChunkServer {
-    #[serde(with = "custom_uuid")]
     pub id: Uuid,
     pub address: String,
     #[serde(with = "custom_time")]
@@ -220,7 +204,6 @@ pub enum FileInfo {
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
 pub struct File {
-    #[serde(with = "custom_uuid")]
     pub id: Uuid,
     pub name: String,
     pub size: u64,
@@ -245,11 +228,8 @@ impl File {
 
 #[derive(Serialize, Deserialize, Clone, Copy)]
 pub struct Chunk {
-    #[serde(with = "custom_uuid")]
     pub id: Uuid,
-    #[serde(with = "custom_uuid")]
     pub file_id: Uuid,
-    #[serde(with = "custom_uuid")]
     pub server_id: Uuid,
     pub file_part_num: u16,
 }
@@ -283,7 +263,11 @@ mod tests {
             trie.children.get("dir1").unwrap().file_info,
             FileInfo::Directory("dir1".into())
         );
-        trie.insert_file("some.zip", 20);
+        trie.insert_file(
+            "some.zip",
+            20,
+            // &[Uuid::from_str("ec73d743-050b-4f52-992a-d1102340d739").unwrap()],
+        );
         assert_eq!(trie.children.len(), 3);
         let file = &trie.children.get("some.zip").ok_or("some.zip not found")?;
         match &file.file_info {
@@ -300,7 +284,11 @@ mod tests {
         let mut trie = FileMetadata::create_root();
         trie.insert_dir("dir1");
         trie.insert_dir("dir2");
-        trie.insert_file("some.zip", 20);
+        trie.insert_file(
+            "some.zip",
+            20,
+            // &[Uuid::from_str("ec73d743-050b-4f52-992a-d1102340d739").unwrap()],
+        );
         let dir1 = trie.traverse("dir1")?;
         match &dir1.file_info {
             FileInfo::Directory(name) => assert_eq!(name, "dir1"),
@@ -336,13 +324,24 @@ mod tests {
         let mut trie = FileMetadata::create_root();
         trie.insert_dir("dir1");
         trie.insert_dir("dir2");
-        trie.insert_file("some.zip", 0);
+        trie.insert_file(
+            "some.zip",
+            0,
+            // &[Uuid::from_str("ec73d743-050b-4f52-992a-d1102340d739").unwrap()],
+        );
         let dir2 = trie.traverse_mut("dir2")?;
-        dir2.insert_file("test.txt", 10);
+        dir2.insert_file(
+            "test.txt",
+            10,
+            // &[Uuid::from_str("1a6e7006-12a7-4935-b8c0-58fa7ea84b09").unwrap()],
+        );
         dir2.insert_dir("subdir");
         let subdir = dir2.traverse_mut("subdir")?;
         subdir.insert_dir("tmp");
-        subdir.insert_file("file", 100);
+        subdir.insert_file(
+            "file", 100,
+            // &[Uuid::from_str("6d53a85f-505b-4a1a-ae6d-f7c18761d04a").unwrap()],
+        );
 
         Ok(trie)
     }

@@ -7,7 +7,7 @@ extern crate ccfs_commons;
 mod routes;
 
 use ccfs_commons::{Chunk, ChunkServer, File, FileMetadata};
-use rocket_contrib::uuid::uuid_crate as uuid;
+use rocket_contrib::uuid::uuid_crate::Uuid;
 use routes::{
     chunk_server_ping, create_file, get_chunks, get_file, get_server, get_servers,
     signal_chuck_upload_completed,
@@ -15,9 +15,9 @@ use routes::{
 use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
 
-pub type ChunkServersMap = Arc<RwLock<HashMap<uuid::Uuid, ChunkServer>>>;
-pub type ChunksMap = Arc<RwLock<HashMap<uuid::Uuid, Chunk>>>;
-pub type FilesMap = Arc<RwLock<HashMap<uuid::Uuid, File>>>;
+pub type ChunkServersMap = Arc<RwLock<HashMap<Uuid, ChunkServer>>>;
+pub type ChunksMap = Arc<RwLock<HashMap<Uuid, Chunk>>>;
+pub type FilesMap = Arc<RwLock<HashMap<Uuid, File>>>;
 pub type FileMetadataTree = Arc<RwLock<FileMetadata>>;
 
 #[launch]
