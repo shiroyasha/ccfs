@@ -15,6 +15,7 @@ pub enum Error {
         source: tokio::io::Error,
         path: PathBuf,
     },
+
     #[snafu(display("Unable to write to {}: {}", path.display(), source))]
     IOWrite {
         source: tokio::io::Error,
@@ -31,13 +32,16 @@ pub enum Error {
         source: rocket_contrib::uuid::uuid_crate::Error,
         text: String,
     },
+
     #[snafu(display("Unable to parse number {}: {}", text, source))]
     ParseNumber {
         source: std::num::ParseIntError,
         text: String,
     },
+
     #[snafu(display("Communication error with metadata server: {}", source))]
     MetaServerCommunication { source: reqwest::Error },
+
     #[snafu(display("Missing form part {}", key))]
     MissingPart { key: String },
 }

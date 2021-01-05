@@ -6,7 +6,7 @@ use rocket::http::ContentType;
 use rocket::response::Stream;
 use rocket::{Data, State};
 use rocket_contrib::json::JsonValue;
-use rocket_contrib::uuid::{uuid_crate as uuid, Uuid};
+use rocket_contrib::uuid::uuid_crate::Uuid;
 use rocket_multipart_form_data::{
     MultipartFormData, MultipartFormDataField, MultipartFormDataOptions,
 };
@@ -34,30 +34,31 @@ pub async fn multipart_upload(
         temporary_dir: path.to_path_buf(),
         allowed_fields: vec![
             MultipartFormDataField::raw("file").size_limit(CHUNK_SIZE),
+            MultipartFormDataField::text("chunk_id"),
             MultipartFormDataField::text("file_id"),
             MultipartFormDataField::text("file_part_num"),
         ],
     };
 
     let limit = 64.megabytes();
-    let multipart_form_data = MultipartFormData::parse(content_type, data.open(limit), options)
+    let form_data = MultipartFormData::parse(content_type, data.open(limit), options)
         .await
         .context(errors::ParseData)?;
 
-    let file_id_text = &get_multipart_field_data(&multipart_form_data.texts, "file_id")?[0].text;
-    let file_part_text =
-        &get_multipart_field_data(&multipart_form_data.texts, "file_part_num")?[0].text;
-    let file = &get_multipart_field_data(&multipart_form_data.raw, "file")?[0];
+    let chunk_str = &get_multipart_field_data(&form_data.texts, "chunk_id")?[0].text;
+    let file_str = &get_multipart_field_data(&form_data.texts, "file_id")?[0].text;
+    let part_str = &get_multipart_field_data(&form_data.texts, "file_part_num")?[0].text;
+    let file = &get_multipart_field_data(&form_data.raw, "file")?[0];
 
-    let file_id =
-        uuid::Uuid::from_str(&file_id_text).context(errors::ParseUuid { text: file_id_text })?;
+    let chunk_id = Uuid::from_str(&chunk_str).context(errors::ParseUuid { text: chunk_str })?;
+    let file_id = Uuid::from_str(&file_str).context(errors::ParseUuid { text: file_str })?;
+    let part_num = part_str
+        .parse()
+        .context(errors::ParseNumber { text: part_str })?;
 
-    let file_part_num = file_part_text.parse().context(errors::ParseNumber {
-        text: file_part_text,
-    })?;
+    let chunk = Chunk::new(chunk_id, file_id, *server_id.inner(), part_num);
+    let new_path = path.join(chunk.chunk_name());
 
-    let chunk = Chunk::new(file_id, *server_id.inner(), file_part_num);
-    let new_path = path.join(chunk.id.to_string());
     let mut f = File::create(&new_path)
         .await
         .context(errors::IOCreate { path: &new_path })?;
@@ -74,9 +75,12 @@ pub async fn multipart_upload(
     Ok(json!(chunk))
 }
 
-#[get("/download/<chunk_id>")]
-pub async fn download(chunk_id: Uuid, uploads_dir: State<'_, UploadsDir>) -> Option<Stream<File>> {
-    let file_path = uploads_dir.join(chunk_id.to_string());
+#[get("/download/<chunk_name>")]
+pub async fn download(
+    chunk_name: String,
+    uploads_dir: State<'_, UploadsDir>,
+) -> Option<Stream<File>> {
+    let file_path = uploads_dir.join(chunk_name);
     File::open(file_path).await.map(Stream::from).ok()
 }
 

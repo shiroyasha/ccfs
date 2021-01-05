@@ -30,8 +30,8 @@ pub enum Error {
         action: FileAction,
     },
 
-    #[snafu(display("Chunk {} is currently not available", chunk_id))]
-    ChunkNotAvailable { chunk_id: Uuid },
+    #[snafu(display("Chunk {} is currently not available", chunk_name))]
+    ChunkNotAvailable { chunk_name: String },
 
     #[snafu(display("Failed to download some chunks"))]
     SomeChunksNotAvailable,
@@ -39,8 +39,8 @@ pub enum Error {
     #[snafu(display("Failed to upload some chunks"))]
     UploadChunks,
 
-    #[snafu(display("Failed to upload chunk {} for file {}", part, file_id))]
-    UploadSingleChunk { part: u16, file_id: Uuid },
+    #[snafu(display("Failed to upload chunk {} for file {}", part, chunk_id))]
+    UploadSingleChunk { part: usize, chunk_id: Uuid },
 
     #[snafu(display("File doesn't exist: {}", path.display()))]
     FileNotExist { path: PathBuf },

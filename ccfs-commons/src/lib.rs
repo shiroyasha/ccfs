@@ -19,8 +19,8 @@ pub struct ChunkServer {
     pub latest_ping_time: DateTime<Utc>,
 }
 impl ChunkServer {
-    pub fn new(id: Uuid, address: String) -> ChunkServer {
-        ChunkServer {
+    pub fn new(id: Uuid, address: String) -> Self {
+        Self {
             id,
             address,
             latest_ping_time: Utc::now(),
@@ -62,7 +62,7 @@ pub enum FileStatus {
 }
 impl Default for FileStatus {
     fn default() -> Self {
-        FileStatus::Started
+        Self::Started
     }
 }
 
@@ -93,10 +93,10 @@ impl FileMetadata {
         }
     }
 
-    pub fn create_file(name: String, size: u64) -> Self {
+    pub fn create_file(name: String, size: u64, chunks: Vec<Uuid>) -> Self {
         let now = Utc::now();
         Self {
-            file_info: FileInfo::File(File::new(name, size)),
+            file_info: FileInfo::File(File::new(name, size, chunks)),
             children: BTreeMap::new(),
             version: 1,
             created_at: now,
@@ -132,20 +132,20 @@ impl FileMetadata {
 
     pub fn insert_dir(&mut self, name: &str) {
         self.children
-            .insert(name.into(), FileMetadata::create_dir(name.into()));
+            .insert(name.into(), Self::create_dir(name.into()));
     }
 
-    pub fn insert_file(&mut self, name: &str, size: u64) {
+    pub fn insert_file(&mut self, name: &str, size: u64, chunks: Vec<Uuid>) {
         self.children
-            .insert(name.into(), FileMetadata::create_file(name.into(), size));
+            .insert(name.into(), Self::create_file(name.into(), size, chunks));
     }
 
     pub fn print_subtree(&self) -> String {
         match &self.file_info {
-            FileInfo::File(file) => file.name.clone(),
+            FileInfo::File(file) => file.name.to_string(),
             FileInfo::Directory(name) => {
                 let mut iter = self.children.values().peekable();
-                let mut s = name.clone();
+                let mut s = name.to_string();
                 while let Some(child) = iter.next() {
                     let prefix = if iter.peek().is_some() { "├" } else { "└" };
                     let subtree = child.print_subtree();
@@ -194,19 +194,19 @@ pub struct File {
     pub id: Uuid,
     pub name: String,
     pub size: u64,
-    pub num_of_chunks: u16,
+    pub chunks: Vec<Uuid>,
     #[serde(default)]
-    pub num_of_completed_chunks: u16,
+    pub num_of_completed_chunks: usize,
     #[serde(default = "FileStatus::default")]
     pub status: FileStatus,
 }
 impl File {
-    pub fn new(name: String, size: u64) -> File {
-        File {
-            id: Uuid::from_str(&uuid::Uuid::new_v4().to_string()).unwrap(),
+    pub fn new(name: String, size: u64, chunks: Vec<Uuid>) -> Self {
+        Self {
+            id: Uuid::new_v4(),
             name,
             size,
-            num_of_chunks: (size / CHUNK_SIZE + 1) as u16,
+            chunks,
             num_of_completed_chunks: 0,
             status: FileStatus::Started,
         }
@@ -218,16 +218,20 @@ pub struct Chunk {
     pub id: Uuid,
     pub file_id: Uuid,
     pub server_id: Uuid,
-    pub file_part_num: u16,
+    pub file_part_num: usize,
 }
 impl Chunk {
-    pub fn new(file_id: Uuid, server_id: Uuid, file_part_num: u16) -> Chunk {
-        Chunk {
-            id: Uuid::from_str(&uuid::Uuid::new_v4().to_string()).unwrap(),
+    pub fn new(id: Uuid, file_id: Uuid, server_id: Uuid, file_part_num: usize) -> Self {
+        Self {
+            id,
             file_id,
             server_id,
             file_part_num,
         }
+    }
+
+    pub fn chunk_name(&self) -> String {
+        format!("{}_{}", self.file_id, self.id)
     }
 }
 
@@ -241,19 +245,19 @@ mod tests {
         trie.insert_dir("dir1");
         assert_eq!(trie.children.len(), 1);
         assert_eq!(
-            trie.children.get("dir1").unwrap().file_info,
+            trie.children.get("dir1").ok_or("missing dir1")?.file_info,
             FileInfo::Directory("dir1".into())
         );
         trie.insert_dir("dir2");
         assert_eq!(trie.children.len(), 2);
         assert_eq!(
-            trie.children.get("dir1").unwrap().file_info,
-            FileInfo::Directory("dir1".into())
+            trie.children.get("dir2").ok_or("missing dir2")?.file_info,
+            FileInfo::Directory("dir2".into())
         );
         trie.insert_file(
             "some.zip",
             20,
-            // &[Uuid::from_str("ec73d743-050b-4f52-992a-d1102340d739").unwrap()],
+            vec![Uuid::from_str("ec73d743-050b-4f52-992a-d1102340d739")?],
         );
         assert_eq!(trie.children.len(), 3);
         let file = &trie.children.get("some.zip").ok_or("some.zip not found")?;
@@ -274,7 +278,7 @@ mod tests {
         trie.insert_file(
             "some.zip",
             20,
-            // &[Uuid::from_str("ec73d743-050b-4f52-992a-d1102340d739").unwrap()],
+            vec![Uuid::from_str("ec73d743-050b-4f52-992a-d1102340d739")?],
         );
         let dir1 = trie.traverse("dir1")?;
         match &dir1.file_info {
@@ -314,20 +318,21 @@ mod tests {
         trie.insert_file(
             "some.zip",
             0,
-            // &[Uuid::from_str("ec73d743-050b-4f52-992a-d1102340d739").unwrap()],
+            vec![Uuid::from_str("ec73d743-050b-4f52-992a-d1102340d739")?],
         );
         let dir2 = trie.traverse_mut("dir2")?;
         dir2.insert_file(
             "test.txt",
             10,
-            // &[Uuid::from_str("1a6e7006-12a7-4935-b8c0-58fa7ea84b09").unwrap()],
+            vec![Uuid::from_str("1a6e7006-12a7-4935-b8c0-58fa7ea84b09")?],
         );
         dir2.insert_dir("subdir");
         let subdir = dir2.traverse_mut("subdir")?;
         subdir.insert_dir("tmp");
         subdir.insert_file(
-            "file", 100,
-            // &[Uuid::from_str("6d53a85f-505b-4a1a-ae6d-f7c18761d04a").unwrap()],
+            "file",
+            100,
+            vec![Uuid::from_str("6d53a85f-505b-4a1a-ae6d-f7c18761d04a")?],
         );
 
         Ok(trie)

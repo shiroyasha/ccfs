@@ -62,11 +62,19 @@ pub async fn upload_item(
     path: &Path,
     path_prefix: &Path,
 ) -> Result<()> {
+    let mut chunks = Vec::new();
     let file_meta = path.metadata().context(errors::ReadMetadata { path })?;
     let file_name = path.file_name().unwrap().to_str().unwrap().to_string();
     let file_data = match file_meta.is_dir() {
         true => FileMetadata::create_dir(file_name),
-        false => FileMetadata::create_file(file_name, file_meta.len()),
+        false => {
+            chunks = prepare_chunks(file_meta.len(), path).await?;
+            FileMetadata::create_file(
+                file_name,
+                file_meta.len(),
+                chunks.iter().map(|(id, ..)| *id).collect(),
+            )
+        }
     };
     let upload_url = format!(
         "{}/api/files/upload?path={}",
@@ -78,49 +86,53 @@ pub async fn upload_item(
         .json()
         .await
         .context(errors::ParseJson)?;
-    if let FileInfo::File(file_info) = file.file_info {
-        upload_file(client, meta_url, path, &file_info).await?;
+    if let FileInfo::File(file_info) = &file.file_info {
+        upload_file(client, meta_url, &file_info.id, chunks).await?;
     }
     return Ok(());
 }
 
-pub async fn upload_file(
-    client: &Client,
-    meta_url: &str,
-    path: &Path,
-    file_info: &File,
-) -> Result<()> {
-    let servers_url = format!("{}/api/servers", meta_url);
-    let servers: Vec<ChunkServer> = get_request_json(&client, &servers_url).await?;
+async fn prepare_chunks(size: u64, path: &Path) -> Result<Vec<(Uuid, Vec<u8>)>> {
     let mut f = FileFS::open(path).await.context(errors::FileIO {
         path,
         action: FileAction::Open,
     })?;
 
-    let mut file_parts = Vec::with_capacity(file_info.num_of_chunks as usize);
-    for file_part in 0..file_info.num_of_chunks {
-        let mut chunk = Vec::with_capacity(CHUNK_SIZE as usize);
+    let num_of_chunks = (size / CHUNK_SIZE + 1) as usize;
+    let mut file_parts = Vec::with_capacity(num_of_chunks);
+    for _ in 0..num_of_chunks {
+        let mut content = Vec::with_capacity(CHUNK_SIZE as usize);
         loop {
-            let mut buff_size = BUF_SIZE;
-            let remaining = CHUNK_SIZE as usize - chunk.len();
-            if remaining < BUF_SIZE {
-                buff_size = remaining;
-            }
+            let rem = CHUNK_SIZE as usize - content.len();
+            let buff_size = if rem < BUF_SIZE { rem } else { BUF_SIZE };
             let mut temp = Vec::with_capacity(buff_size);
             let n = f.read_buf(&mut temp).await.context(errors::FileIO {
                 path,
                 action: FileAction::Read,
             })?;
-            chunk.append(&mut temp);
-            if n < BUF_SIZE || CHUNK_SIZE == chunk.len() as u64 {
+            content.append(&mut temp);
+            if n < BUF_SIZE || CHUNK_SIZE == content.len() as u64 {
                 break;
             }
         }
-        file_parts.push((file_info.id, file_part, chunk));
+        file_parts.push((Uuid::new_v4(), content));
     }
-    let requests = file_parts
+    Ok(file_parts)
+}
+
+pub async fn upload_file(
+    client: &Client,
+    meta_url: &str,
+    file_id: &Uuid,
+    chunks: Vec<(Uuid, Vec<u8>)>,
+) -> Result<()> {
+    let servers_url = format!("{}/api/servers", meta_url);
+    let servers: Vec<ChunkServer> = get_request_json(&client, &servers_url).await?;
+
+    let requests = chunks
         .into_iter()
-        .map(|part| upload_chunk(client, &servers, part))
+        .enumerate()
+        .map(|chunk| upload_chunk(client, &servers, file_id, chunk))
         .collect::<Vec<_>>();
     let responses = join_all(requests).await;
     if responses.iter().filter(|resp| resp.is_err()).size_hint().0 > 0 {
@@ -130,12 +142,13 @@ pub async fn upload_file(
     Ok(())
 }
 
-pub async fn upload_chunk(
+pub async fn upload_chunk<'a>(
     client: &Client,
     servers: &[ChunkServer],
-    form_data: (Uuid, u16, Vec<u8>),
+    file_id: &Uuid,
+    form_data: (usize, (Uuid, Vec<u8>)),
 ) -> Result<()> {
-    let (file_id, part, raw_data) = form_data;
+    let (part, (chunk_id, raw_data)) = form_data;
     let mut slice = servers.to_vec();
     slice.shuffle(&mut thread_rng());
     for server in servers {
@@ -144,6 +157,7 @@ pub async fn upload_chunk(
             .post(&upload_url)
             .multipart(
                 Form::new()
+                    .text("chunk_id", chunk_id.to_string())
                     .text("file_id", file_id.to_string())
                     .text("file_part_num", part.to_string())
                     .part("file", Part::bytes(raw_data.clone())),
@@ -155,7 +169,7 @@ pub async fn upload_chunk(
             return Ok(());
         }
     }
-    Err(errors::UploadSingleChunk { part, file_id }.build())
+    Err(errors::UploadSingleChunk { part, chunk_id }.build())
 }
 
 pub async fn download<T: AsRef<Path>>(
@@ -204,7 +218,7 @@ pub async fn download_file(
     let path = target_path.as_path();
     let mut chunks: Vec<Chunk> = get_request_json(&client, &chunks_url).await?;
     chunks.sort_by_key(|a| a.file_part_num);
-    let groups = chunks.linear_group_by(|a, b| a.file_part_num == b.file_part_num);
+    let groups = chunks.exponential_group_by_key(|a| a.file_part_num);
     let mut file = FileFS::create(path).await.context(errors::FileIO {
         path,
         action: FileAction::Create,
@@ -235,20 +249,20 @@ pub async fn download_file(
 }
 
 pub async fn download_chunk(client: &Client, chunks: &[Chunk], meta_url: &str) -> Result<Response> {
-    let chunk_id = chunks[0].id;
+    let chunk_name = chunks[0].chunk_name();
     for chunk in chunks {
         let chunk_url = format!("{}/api/servers/{}", meta_url, &chunk.server_id);
         let resp: Response = get_request(&client, &chunk_url).await?;
         if resp.status().is_success() {
             let server: ChunkServer = resp.json().await.context(errors::ParseJson)?;
-            let download_url = format!("{}/api/download/{}", server.address, &chunk.id);
+            let download_url = format!("{}/api/download/{}", server.address, chunk.chunk_name());
             let download_resp = get_request(&client, &download_url).await?;
             if download_resp.status().is_success() {
                 return Ok(download_resp);
             }
         }
     }
-    Err(errors::ChunkNotAvailable { chunk_id }.build())
+    Err(errors::ChunkNotAvailable { chunk_name }.build())
 }
 
 async fn get_request(client: &Client, url: &str) -> Result<Response> {

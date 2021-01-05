@@ -115,7 +115,7 @@ pub fn signal_chuck_upload_completed(
                     chunks_map.insert(chunk.id, chunk);
 
                     file.num_of_completed_chunks += 1;
-                    if file.num_of_completed_chunks == file.num_of_chunks {
+                    if file.num_of_completed_chunks == file.chunks.len() {
                         file.status = FileStatus::Completed;
                     }
                     json!(file)
