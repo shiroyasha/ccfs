@@ -10,5 +10,5 @@ edition = "2018"
 serde = { version = "1.0", features = ["derive"] }
 rocket = { git = "https://github.com/SergioBenitez/Rocket", branch = "master" }
 rocket_contrib = { git = "https://github.com/SergioBenitez/Rocket", branch = "master", features = ["uuid"] }
-chrono = "0.4.19"
+chrono = { version = "0.4.19", features = ["serde"] }
 uuid = { version = "0.8.1", features = ["v4", "serde"] }

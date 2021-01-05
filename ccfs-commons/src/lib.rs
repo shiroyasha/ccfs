@@ -1,3 +1,4 @@
+use chrono::serde::ts_milliseconds;
 use chrono::{DateTime, Utc};
 use rocket::http::Status;
 use rocket::outcome::Outcome::*;
@@ -10,25 +11,11 @@ use uuid::Uuid;
 
 pub const CHUNK_SIZE: u64 = 64000000;
 
-pub mod custom_time {
-    use chrono::{DateTime, NaiveDateTime, Utc};
-    use serde::{Deserialize, Deserializer, Serializer};
-
-    pub fn serialize<S: Serializer>(val: &DateTime<Utc>, ser: S) -> Result<S::Ok, S::Error> {
-        ser.serialize_i64(val.timestamp())
-    }
-
-    pub fn deserialize<'de, D: Deserializer<'de>>(deser: D) -> Result<DateTime<Utc>, D::Error> {
-        let s: i64 = Deserialize::deserialize(deser)?;
-        Ok(DateTime::from_utc(NaiveDateTime::from_timestamp(s, 0), Utc))
-    }
-}
-
 #[derive(Clone, Serialize, Deserialize, Debug)]
 pub struct ChunkServer {
     pub id: Uuid,
     pub address: String,
-    #[serde(with = "custom_time")]
+    #[serde(with = "ts_milliseconds")]
     pub latest_ping_time: DateTime<Utc>,
 }
 impl ChunkServer {
@@ -84,9 +71,9 @@ pub struct FileMetadata {
     pub file_info: FileInfo,
     pub children: BTreeMap<String, FileMetadata>,
     pub version: usize,
-    #[serde(with = "custom_time")]
+    #[serde(with = "ts_milliseconds")]
     pub created_at: DateTime<Utc>,
-    #[serde(with = "custom_time")]
+    #[serde(with = "ts_milliseconds")]
     pub modified_at: DateTime<Utc>,
 }
 
