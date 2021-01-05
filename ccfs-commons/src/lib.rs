@@ -218,15 +218,13 @@ pub struct Chunk {
     pub id: Uuid,
     pub file_id: Uuid,
     pub server_id: Uuid,
-    pub file_part_num: usize,
 }
 impl Chunk {
-    pub fn new(id: Uuid, file_id: Uuid, server_id: Uuid, file_part_num: usize) -> Self {
+    pub fn new(id: Uuid, file_id: Uuid, server_id: Uuid) -> Self {
         Self {
             id,
             file_id,
             server_id,
-            file_part_num,
         }
     }
 

@@ -36,7 +36,6 @@ pub async fn multipart_upload(
             MultipartFormDataField::raw("file").size_limit(CHUNK_SIZE),
             MultipartFormDataField::text("chunk_id"),
             MultipartFormDataField::text("file_id"),
-            MultipartFormDataField::text("file_part_num"),
         ],
     };
 
@@ -47,16 +46,12 @@ pub async fn multipart_upload(
 
     let chunk_str = &get_multipart_field_data(&form_data.texts, "chunk_id")?[0].text;
     let file_str = &get_multipart_field_data(&form_data.texts, "file_id")?[0].text;
-    let part_str = &get_multipart_field_data(&form_data.texts, "file_part_num")?[0].text;
     let file = &get_multipart_field_data(&form_data.raw, "file")?[0];
 
     let chunk_id = Uuid::from_str(&chunk_str).context(errors::ParseUuid { text: chunk_str })?;
     let file_id = Uuid::from_str(&file_str).context(errors::ParseUuid { text: file_str })?;
-    let part_num = part_str
-        .parse()
-        .context(errors::ParseNumber { text: part_str })?;
 
-    let chunk = Chunk::new(chunk_id, file_id, *server_id.inner(), part_num);
+    let chunk = Chunk::new(chunk_id, file_id, *server_id.inner());
     let new_path = path.join(chunk.chunk_name());
 
     let mut f = File::create(&new_path)
