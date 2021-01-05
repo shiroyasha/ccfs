@@ -39,6 +39,9 @@ pub enum Error {
     #[snafu(display("Failed to upload some chunks"))]
     UploadChunks,
 
+    #[snafu(display("Failed to upload chunk {} for file {}", part, file_id))]
+    UploadSingleChunk { part: u16, file_id: Uuid },
+
     #[snafu(display("File doesn't exist: {}", path.display()))]
     FileNotExist { path: PathBuf },
 

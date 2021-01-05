@@ -12,6 +12,7 @@ use std::path::Path;
 use tokio::fs::{create_dir, File as FileFS};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::stream::StreamExt;
+use uuid::Uuid;
 
 const BUF_SIZE: usize = 16384;
 
@@ -115,7 +116,7 @@ pub async fn upload_file(
                 break;
             }
         }
-        file_parts.push((file_info.id.to_string(), file_part.to_string(), chunk));
+        file_parts.push((file_info.id, file_part, chunk));
     }
     let requests = file_parts
         .into_iter()
@@ -132,9 +133,9 @@ pub async fn upload_file(
 pub async fn upload_chunk(
     client: &Client,
     servers: &[ChunkServer],
-    form_data: (String, String, Vec<u8>),
+    form_data: (Uuid, u16, Vec<u8>),
 ) -> Result<()> {
-    let (file_id, file_part, raw_data) = form_data;
+    let (file_id, part, raw_data) = form_data;
     let mut slice = servers.to_vec();
     slice.shuffle(&mut thread_rng());
     for server in servers {
@@ -143,8 +144,8 @@ pub async fn upload_chunk(
             .post(&upload_url)
             .multipart(
                 Form::new()
-                    .text("file_id", file_id.clone())
-                    .text("file_part_num", file_part.clone())
+                    .text("file_id", file_id.to_string())
+                    .text("file_part_num", part.to_string())
                     .part("file", Part::bytes(raw_data.clone())),
             )
             .send()
@@ -154,9 +155,7 @@ pub async fn upload_chunk(
             return Ok(());
         }
     }
-    Err(Error::ChunkNotAvailable {
-        chunk_id: servers[0].id,
-    })
+    Err(errors::UploadSingleChunk { part, file_id }.build())
 }
 
 pub async fn download<T: AsRef<Path>>(
@@ -235,12 +234,9 @@ pub async fn download_file(
     Ok(())
 }
 
-pub async fn download_chunk(
-    client: &Client,
-    servers: &[Chunk],
-    meta_url: &str,
-) -> Result<Response> {
-    for chunk in servers {
+pub async fn download_chunk(client: &Client, chunks: &[Chunk], meta_url: &str) -> Result<Response> {
+    let chunk_id = chunks[0].id;
+    for chunk in chunks {
         let chunk_url = format!("{}/api/servers/{}", meta_url, &chunk.server_id);
         let resp: Response = get_request(&client, &chunk_url).await?;
         if resp.status().is_success() {
@@ -252,9 +248,7 @@ pub async fn download_chunk(
             }
         }
     }
-    Err(Error::ChunkNotAvailable {
-        chunk_id: servers[0].id,
-    })
+    Err(errors::ChunkNotAvailable { chunk_id }.build())
 }
 
 async fn get_request(client: &Client, url: &str) -> Result<Response> {
