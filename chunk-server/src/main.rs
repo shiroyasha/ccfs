@@ -2,9 +2,6 @@
 extern crate rocket;
 #[macro_use]
 extern crate rocket_contrib;
-extern crate ccfs_commons;
-extern crate dirs;
-extern crate rocket_multipart_form_data;
 
 mod errors;
 mod routes;

@@ -1,4 +1,3 @@
-extern crate ccfs_commons;
 mod errors;
 mod file_ops;
 
