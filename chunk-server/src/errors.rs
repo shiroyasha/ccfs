@@ -1,7 +1,4 @@
-use rocket::http::Status;
-use rocket::request::Request;
-use rocket::response::Responder;
-use rocket::Response;
+use actix_web::{HttpResponse, ResponseError};
 use snafu::Snafu;
 use std::path::PathBuf;
 
@@ -11,27 +8,35 @@ pub type Result<T, E = Error> = std::result::Result<T, E>;
 #[snafu(visibility = "pub(crate)")]
 pub enum Error {
     #[snafu(display("Unable to create {}: {}", path.display(), source))]
-    IOCreate {
+    Create {
+        source: tokio::io::Error,
+        path: PathBuf,
+    },
+
+    #[snafu(display("Unable to read {}: {}", path.display(), source))]
+    Read {
         source: tokio::io::Error,
         path: PathBuf,
     },
 
     #[snafu(display("Unable to write to {}: {}", path.display(), source))]
-    IOWrite {
+    Write {
         source: tokio::io::Error,
         path: PathBuf,
     },
 
-    #[snafu(display("Unable to parse multipart form data: {}", source))]
-    ParseData {
-        source: rocket_multipart_form_data::MultipartFormDataError,
+    #[snafu(display("Unable to rename from {} to {}: {}", from.display(), to.display(), source))]
+    Rename {
+        source: tokio::io::Error,
+        from: PathBuf,
+        to: PathBuf,
     },
 
+    #[snafu(display("Unable to parse to String: {}", source))]
+    ParseString { source: std::string::FromUtf8Error },
+
     #[snafu(display("Unable to parse uuid {}: {}", text, source))]
-    ParseUuid {
-        source: rocket_contrib::uuid::uuid_crate::Error,
-        text: String,
-    },
+    ParseUuid { source: uuid::Error, text: String },
 
     #[snafu(display("Unable to parse number {}: {}", text, source))]
     ParseNumber {
@@ -40,14 +45,27 @@ pub enum Error {
     },
 
     #[snafu(display("Communication error with metadata server: {}", source))]
-    MetaServerCommunication { source: reqwest::Error },
+    MetaServerCommunication {
+        source: actix_web::client::SendRequestError,
+    },
 
-    #[snafu(display("Missing form part {}", key))]
-    MissingPart { key: String },
+    #[snafu(display("Missing some form parts"))]
+    MissingPart,
 }
 
-impl<'r> Responder<'r, 'static> for Error {
-    fn respond_to(self, _request: &'r Request<'_>) -> rocket::response::Result<'static> {
-        Response::build().status(Status::InternalServerError).ok()
+impl ResponseError for Error {
+    fn error_response(&self) -> HttpResponse {
+        match self {
+            Error::Write { .. }
+            | Error::Read { .. }
+            | Error::Create { .. }
+            | Error::Rename { .. }
+            | Error::MetaServerCommunication { .. }
+            | Error::ParseString { .. }
+            | Error::ParseUuid { .. }
+            | Error::ParseNumber { .. } => HttpResponse::UnprocessableEntity().finish(),
+
+            Error::MissingPart => HttpResponse::BadRequest().finish(),
+        }
     }
 }

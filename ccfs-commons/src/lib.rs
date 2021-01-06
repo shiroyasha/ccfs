@@ -213,7 +213,7 @@ impl File {
     }
 }
 
-#[derive(Serialize, Deserialize, Clone, Copy)]
+#[derive(Serialize, Deserialize, Clone, Copy, Debug)]
 pub struct Chunk {
     pub id: Uuid,
     pub file_id: Uuid,
