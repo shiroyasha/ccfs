@@ -15,10 +15,20 @@ pub enum Error {
     },
 
     #[snafu(display("Request to {} failed: {}", url, source))]
-    FailedRequest { source: reqwest::Error, url: String },
+    FailedRequest {
+        source: actix_web::client::SendRequestError,
+        url: String,
+    },
 
     #[snafu(display("Unable to parse to json: {}", source))]
-    ParseJson { source: reqwest::Error },
+    ParseJson {
+        source: actix_web::client::JsonPayloadError,
+    },
+
+    #[snafu(display("Unable to read payload: {}", source))]
+    ParseBytes {
+        source: actix_web::client::PayloadError,
+    },
 
     #[snafu(display("Unable to parse yaml: {}", source))]
     ParseYaml { source: serde_yaml::Error },
@@ -52,7 +62,7 @@ pub enum Error {
     MissingConfigVal { key: String },
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 pub enum FileAction {
     Read,
     Write,

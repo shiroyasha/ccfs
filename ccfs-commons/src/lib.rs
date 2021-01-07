@@ -9,7 +9,7 @@ use std::error::Error;
 use std::str::FromStr;
 use uuid::Uuid;
 
-pub const CHUNK_SIZE: u64 = 64000000;
+pub const CHUNK_SIZE: u64 = 64 * 1024 * 1024;
 
 #[derive(Clone, Serialize, Deserialize, Debug)]
 pub struct ChunkServer {

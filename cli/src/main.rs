@@ -1,9 +1,9 @@
 mod errors;
 mod file_ops;
 
+use actix_web::client::Client;
 use errors::{FileAction, Result};
 use file_ops::{download, list, tree, upload};
-use reqwest::Client;
 use snafu::ResultExt;
 use std::collections::HashMap;
 use std::path::Path;
@@ -47,7 +47,7 @@ enum Command {
     Tree,
 }
 
-#[tokio::main]
+#[actix_web::main]
 async fn main() -> Result<()> {
     let opts = CliOpts::from_args();
     let path = Path::new(&opts.config);
