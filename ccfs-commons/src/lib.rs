@@ -1,8 +1,9 @@
+use actix_web::dev::Payload;
+use actix_web::error::ErrorBadRequest;
+use actix_web::{Error as ReqError, FromRequest, HttpRequest};
 use chrono::serde::ts_milliseconds;
 use chrono::{DateTime, Utc};
-use rocket::http::Status;
-use rocket::outcome::Outcome::*;
-use rocket::request::{self, FromRequest, Request};
+use futures_util::future::{err, ok, Ready};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::error::Error;
@@ -34,22 +35,28 @@ pub enum HeaderError {
     Invalid,
 }
 
-#[rocket::async_trait]
-impl<'a, 'r> FromRequest<'a, 'r> for ChunkServer {
-    type Error = HeaderError;
+impl FromRequest for ChunkServer {
+    type Error = ReqError;
+    type Future = Ready<Result<ChunkServer, Self::Error>>;
+    type Config = ();
 
-    async fn from_request(request: &'a Request<'r>) -> request::Outcome<Self, Self::Error> {
-        let id_header: Vec<_> = request.headers().get("x-chunk-server-id").collect();
-        let address_header: Vec<_> = request.headers().get("x-chunk-server-address").collect();
-        match (id_header.len(), address_header.len()) {
-            (a, b) if a == 0 || b == 0 => Failure((Status::BadRequest, HeaderError::Missing)),
-            _ => {
-                let parsed_id = Uuid::from_str(&id_header.concat());
-                match parsed_id {
-                    Ok(id) => Success(ChunkServer::new(id, address_header.concat())),
-                    _ => Failure((Status::BadRequest, HeaderError::Invalid)),
+    fn from_request(request: &HttpRequest, _payload: &mut Payload) -> Self::Future {
+        println!("from request for chunk server");
+        let headers = request.headers();
+        match (
+            headers.get("x-chunk-server-id"),
+            headers.get("x-chunk-server-address"),
+        ) {
+            (Some(id_header), Some(address_header)) => {
+                match (id_header.to_str(), address_header.to_str()) {
+                    (Ok(id_str), Ok(url)) => match Uuid::from_str(id_str) {
+                        Ok(id) => ok(ChunkServer::new(id, url.to_string())),
+                        Err(_) => err(ErrorBadRequest("Not a valid uuid")),
+                    },
+                    _ => err(ErrorBadRequest("Cannot read header value")),
                 }
             }
+            _ => err(ErrorBadRequest("Missing header values")),
         }
     }
 }

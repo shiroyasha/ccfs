@@ -265,11 +265,8 @@ async fn get_request(c: &Client, url: &str) -> Result<Response> {
         .context(errors::FailedRequest { url })
 }
 async fn get_request_json<T: DeserializeOwned>(c: &Client, url: &str) -> Result<T> {
-    get_request(c, url)
-        .await?
-        .json()
-        .await
-        .context(errors::ParseJson)
+    let mut resp = get_request(c, url).await?;
+    resp.json().await.context(errors::ParseJson)
 }
 async fn post_request<T: Serialize>(c: &Client, url: &str, data: T) -> Result<Response> {
     c.post(url)
