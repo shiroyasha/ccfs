@@ -7,19 +7,15 @@ edition = "2018"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
+actix-web = "3"
+actix-multipart = "0.3"
+actix-utils = "2.0.0"
 tokio = { version = "0.2", features = ["full"] }
-rocket = { git = "https://github.com/SergioBenitez/Rocket", branch = "master" }
+tokio-util = { version = "0.6", features = ["codec", "io"] }
 serde = { version = "1.0", features = ["derive"] }
-serde_json = "1.0"
-serde_derive = "1.0"
-rocket-multipart-form-data = { git = "https://github.com/impero-com/rocket-multipart-form-data", branch = "rocket-0.5" }
+futures = "0.3.8"
 dirs = "3.0.1"
-reqwest = { version = "0.10.10", features = ["json"] }
 ccfs-commons = { path = "../ccfs-commons" }
 snafu = "0.6.10"
-
-[dependencies.rocket_contrib]
-git = "https://github.com/SergioBenitez/Rocket"
-branch = "master"
-default-features = false
-features = ["uuid", "json"]
+sanitize-filename = "0.3"
+uuid = "0.8.1"

@@ -1,3 +1,4 @@
+use actix_web::{HttpResponse, ResponseError};
 use snafu::Snafu;
 use std::path::PathBuf;
 
@@ -37,5 +38,18 @@ pub enum Error {
     },
 
     #[snafu(display("Unable to read file content: {}", source))]
-    ReadContent { source: std::io::Error },
+    Read { source: std::io::Error },
+}
+
+impl ResponseError for Error {
+    fn error_response(&self) -> HttpResponse {
+        match self {
+            Error::IOCreate { .. }
+            | Error::IOWrite { .. }
+            | Error::Rename { .. }
+            | Error::Deserialize { .. }
+            | Error::Read { .. }
+            | Error::IORead { .. } => HttpResponse::UnprocessableEntity().finish(),
+        }
+    }
 }

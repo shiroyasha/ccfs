@@ -1,85 +1,93 @@
 use crate::errors::{self, Result};
 use crate::{MetadataUrl, ServerID, UploadsDir};
-use ccfs_commons::{Chunk, CHUNK_SIZE};
-use rocket::data::ToByteUnit;
-use rocket::http::ContentType;
-use rocket::response::Stream;
-use rocket::{Data, State};
-use rocket_contrib::json::JsonValue;
-use rocket_contrib::uuid::uuid_crate::Uuid;
-use rocket_multipart_form_data::{
-    MultipartFormData, MultipartFormDataField, MultipartFormDataOptions,
-};
+use actix_multipart::{Field, Multipart};
+use actix_web::web::{self, Data};
+use actix_web::{client::Client, HttpResponse};
+use ccfs_commons::Chunk;
+use fs::{create_dir_all, rename};
+use futures::{StreamExt, TryStreamExt};
 use snafu::ResultExt;
 use std::collections::HashMap;
 use std::str::FromStr;
 use tokio::fs::{self, File};
-use tokio::io::AsyncWriteExt;
+use tokio::io::{reader_stream, AsyncWriteExt};
+use uuid::Uuid;
 
-#[post("/upload", data = "<data>")]
-pub async fn multipart_upload(
-    metadata_url: State<'_, MetadataUrl>,
-    server_id: State<'_, ServerID>,
-    uploads_dir: State<'_, UploadsDir>,
-    content_type: &ContentType,
-    data: Data,
-) -> Result<JsonValue> {
-    let path = uploads_dir.inner();
-    if !path.exists() {
-        fs::create_dir(path)
-            .await
-            .context(errors::IOCreate { path })?;
+async fn handle_string(mut data: Field) -> Result<String> {
+    let mut content = Vec::new();
+    while let Some(Ok(bytes)) = data.next().await {
+        content.extend(bytes.as_ref());
     }
-    let options = MultipartFormDataOptions {
-        temporary_dir: path.to_path_buf(),
-        allowed_fields: vec![
-            MultipartFormDataField::raw("file").size_limit(CHUNK_SIZE),
-            MultipartFormDataField::text("chunk_id"),
-            MultipartFormDataField::text("file_id"),
-        ],
-    };
-
-    let limit = 64.megabytes();
-    let form_data = MultipartFormData::parse(content_type, data.open(limit), options)
-        .await
-        .context(errors::ParseData)?;
-
-    let chunk_str = &get_multipart_field_data(&form_data.texts, "chunk_id")?[0].text;
-    let file_str = &get_multipart_field_data(&form_data.texts, "file_id")?[0].text;
-    let file = &get_multipart_field_data(&form_data.raw, "file")?[0];
-
-    let chunk_id = Uuid::from_str(&chunk_str).context(errors::ParseUuid { text: chunk_str })?;
-    let file_id = Uuid::from_str(&file_str).context(errors::ParseUuid { text: file_str })?;
-
-    let chunk = Chunk::new(chunk_id, file_id, *server_id.inner());
-    let new_path = path.join(chunk.chunk_name());
-
-    let mut f = File::create(&new_path)
-        .await
-        .context(errors::IOCreate { path: &new_path })?;
-    f.write_all(&file.raw)
-        .await
-        .context(errors::IOWrite { path: new_path })?;
-
-    let _resp = reqwest::Client::new()
-        .post(&format!("{}/api/chunk/completed", metadata_url.inner()))
-        .json(&chunk)
-        .send()
-        .await
-        .context(errors::MetaServerCommunication)?;
-    Ok(json!(chunk))
+    String::from_utf8(content).context(errors::ParseString)
 }
 
-#[get("/download/<chunk_name>")]
-pub async fn download(
-    chunk_name: String,
-    uploads_dir: State<'_, UploadsDir>,
-) -> Option<Stream<File>> {
-    let file_path = uploads_dir.join(chunk_name);
-    File::open(file_path).await.map(Stream::from).ok()
+async fn handle_file(mut data: Field, path: &str) -> Result<()> {
+    let mut f = File::create(path).await.context(errors::Create { path })?;
+    while let Some(Ok(bytes)) = data.next().await {
+        f.write_all(&bytes).await.context(errors::Write { path })?;
+    }
+    Ok(())
 }
 
-fn get_multipart_field_data<'a, T>(map: &'a HashMap<String, T>, key: &str) -> Result<&'a T> {
-    map.get(key)
-        .ok_or_else(|| errors::MissingPart { key }.build())
+pub async fn upload(
+    mut data: Multipart,
+    meta_url: Data<MetadataUrl>,
+    server: Data<ServerID>,
+    dir: Data<UploadsDir>,
+) -> Result<HttpResponse> {
+    let path = &dir.join(".tmp");
+    if !path.exists() {
+        create_dir_all(&path)
+            .await
+            .context(errors::Create { path })?;
+    }
+    let mut parts: HashMap<String, String> = HashMap::new();
+    while let Ok(Some(field)) = data.try_next().await {
+        if let Some(content_disposition) = field.content_disposition() {
+            if let Some(name) = content_disposition.get_name() {
+                match name {
+                    "chunk_id" | "file_id" => {
+                        parts.insert(name.into(), handle_string(field).await?);
+                    }
+                    "file" => {
+                        let file_path = path.join(Uuid::new_v4().to_string()).display().to_string();
+                        handle_file(field, &file_path).await?;
+                        parts.insert(name.into(), file_path);
+                    }
+                    _ => {}
+                }
+            }
+        }
+    }
+    if parts.len() != 3 {
+        return Err(errors::MissingPart.build());
+    }
+
+    let id_str = parts.remove("chunk_id").unwrap_or_else(|| unreachable!());
+    let file_id_str = parts.remove("file_id").unwrap_or_else(|| unreachable!());
+    let file_path_str = parts.remove("file").unwrap_or_else(|| unreachable!());
+
+    let id = Uuid::from_str(&id_str).context(errors::ParseUuid { text: id_str })?;
+    let file_id = Uuid::from_str(&file_id_str).context(errors::ParseUuid { text: file_id_str })?;
+
+    let chunk = Chunk::new(id, file_id, *server.into_inner());
+    let from = file_path_str;
+    let to = &dir.join(chunk.chunk_name());
+    rename(&from, to)
+        .await
+        .context(errors::Rename { from, to })?;
+
+    let _resp = Client::new()
+        .post(&format!("{}/api/chunk/completed", meta_url.into_inner()))
+        .send_json(&chunk)
+        .await
+        .context(errors::MetaServerCommunication);
+
+    Ok(HttpResponse::Ok().json(chunk))
+}
+
+pub async fn download(info: web::Path<String>, dir: Data<UploadsDir>) -> Result<HttpResponse> {
+    let path = dir.join(&info.into_inner());
+    let file = File::open(&path).await.context(errors::Read { path })?;
+    Ok(HttpResponse::Ok().streaming(reader_stream(file)))
 }

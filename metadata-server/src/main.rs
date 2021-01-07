@@ -1,29 +1,24 @@
-#[macro_use]
-extern crate rocket;
-#[macro_use]
-extern crate rocket_contrib;
-
 mod errors;
 mod routes;
 
+use actix_web::web::{get, post, resource, scope, Data};
+use actix_web::{App, HttpServer};
 use ccfs_commons::{Chunk, ChunkServer, File, FileMetadata};
 use errors::Result;
 use futures::future::{BoxFuture, FutureExt};
-use rocket_contrib::uuid::uuid_crate::Uuid;
 use routes::{
     chunk_server_ping, create_file, get_chunks, get_file, get_server, get_servers,
     signal_chuck_upload_completed,
 };
 use snafu::ResultExt;
 use std::collections::HashMap;
-use std::fs::File as FileSync;
-use std::io::prelude::*;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, RwLock};
 use tokio::fs::{create_dir_all, rename, File as FileFS};
-use tokio::io::AsyncWriteExt;
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::task;
 use tokio::time::{delay_for, Duration};
+use uuid::Uuid;
 
 pub type ChunkServersMap = Arc<RwLock<HashMap<Uuid, ChunkServer>>>;
 pub type ChunksMap = Arc<RwLock<HashMap<Uuid, Chunk>>>;
@@ -84,25 +79,25 @@ fn create_snapshot(
     .boxed()
 }
 
-fn init_metadata_tree(snapshot_path: &Path) -> Result<FileMetadataTree> {
-    let tree: FileMetadataTree;
-    if snapshot_path.exists() {
-        let mut file = FileSync::open(snapshot_path).context(errors::IORead {
-            path: snapshot_path,
-        })?;
-        let mut buf = Vec::new();
-        file.read_to_end(&mut buf).context(errors::ReadContent)?;
-        tree = Arc::new(RwLock::new(
-            bincode::deserialize(&buf).context(errors::Deserialize)?,
-        ));
-    } else {
-        tree = Arc::new(RwLock::new(FileMetadata::create_root()));
-    }
-    Ok(tree)
+async fn init_metadata_tree(path: &Path) -> Result<FileMetadataTree> {
+    let tree = match path.exists() {
+        true => {
+            let mut file = FileFS::open(path).await.context(errors::IORead { path })?;
+            let mut buf = Vec::new();
+            file.read_to_end(&mut buf).await.context(errors::Read)?;
+            bincode::deserialize(&buf).context(errors::Deserialize)?
+        }
+        false => FileMetadata::create_root(),
+    };
+    Ok(Arc::new(RwLock::new(tree)))
 }
 
-#[launch]
-fn rocket() -> rocket::Rocket {
+#[actix_web::main]
+async fn main() -> std::io::Result<()> {
+    let host = "127.0.0.1";
+    let port = "8080";
+    let addr = format!("{}:{}", host, port);
+
     let upload_path = dirs::home_dir()
         .expect("Couldn't determine home dir")
         .join("ccfs-snapshots");
@@ -112,29 +107,35 @@ fn rocket() -> rocket::Rocket {
     let chunks: ChunksMap = Arc::new(RwLock::new(HashMap::new()));
     let files: FilesMap = Arc::new(RwLock::new(HashMap::new()));
     let file_metadata_tree: FileMetadataTree = init_metadata_tree(&snapshot_path)
+        .await
         .unwrap_or_else(|err| panic!("Couldn't init metadata tree: {:?}", err));
-    let inst = rocket::ignite()
-        .mount(
-            "/api",
-            routes![
-                get_servers,
-                get_server,
-                chunk_server_ping,
-                create_file,
-                signal_chuck_upload_completed,
-                get_file,
-                get_chunks
-            ],
-        )
-        .manage(chunk_servers)
-        .manage(chunks)
-        .manage(files)
-        .manage(file_metadata_tree.clone());
 
     task::spawn(start_snapshot_job(
         upload_path,
         snapshot_path,
-        file_metadata_tree,
+        file_metadata_tree.clone(),
     ));
-    inst
+    HttpServer::new(move || {
+        App::new()
+            .app_data(Data::new(chunk_servers.clone()))
+            .app_data(Data::new(chunks.clone()))
+            .app_data(Data::new(files.clone()))
+            .app_data(Data::new(file_metadata_tree.clone()))
+            .service(
+                scope("/api")
+                    .service(resource("/servers").route(get().to(get_servers)))
+                    .service(resource("/servers/{id}").route(get().to(get_server)))
+                    .service(resource("/ping").route(post().to(chunk_server_ping)))
+                    .service(resource("/files/upload").route(post().to(create_file)))
+                    .service(
+                        resource("/chunk/completed")
+                            .route(post().to(signal_chuck_upload_completed)),
+                    )
+                    .service(resource("/files").route(get().to(get_file)))
+                    .service(resource("/chunks/file/{file_id}").route(get().to(get_chunks))),
+            )
+    })
+    .bind(&addr)?
+    .run()
+    .await
 }
