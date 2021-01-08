@@ -1,8 +1,9 @@
+use actix_web::error::ErrorUnprocessableEntity;
 use actix_web::{HttpResponse, ResponseError};
 use snafu::Snafu;
 use std::path::PathBuf;
 
-pub type Result<T, E = Error> = std::result::Result<T, E>;
+pub type CCFSResult<T, E = Error> = Result<T, E>;
 
 #[derive(Debug, Snafu)]
 #[snafu(visibility = "pub(crate)")]
@@ -39,17 +40,35 @@ pub enum Error {
 
     #[snafu(display("Unable to read file content: {}", source))]
     Read { source: std::io::Error },
+
+    #[snafu(display("Not found"))]
+    NotFound,
+
+    #[snafu(display("Missing required query param"))]
+    MissingParam,
+
+    #[snafu(display("ReadLock poison error"))]
+    ReadLock,
+
+    #[snafu(display("WriteLock poison error"))]
+    WriteLock,
 }
 
-impl ResponseError for Error {
+impl<'a> ResponseError for Error {
     fn error_response(&self) -> HttpResponse {
+        use Error::*;
+        let display = format!("{}", self);
         match self {
-            Error::IOCreate { .. }
-            | Error::IOWrite { .. }
-            | Error::Rename { .. }
-            | Error::Deserialize { .. }
-            | Error::Read { .. }
-            | Error::IORead { .. } => HttpResponse::UnprocessableEntity().finish(),
+            IOCreate { .. }
+            | IOWrite { .. }
+            | Rename { .. }
+            | Deserialize { .. }
+            | Read { .. }
+            | NotFound { .. }
+            | MissingParam { .. }
+            | ReadLock { .. }
+            | WriteLock { .. }
+            | IORead { .. } => ErrorUnprocessableEntity(display).into(),
         }
     }
 }
