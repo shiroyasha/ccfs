@@ -15,8 +15,7 @@ pub async fn read_body(mut resp: Response) -> CCFSResult<String> {
     if let Ok(bytes) = resp.body().await {
         content.extend(bytes.as_ref());
     }
-    // String::from_utf8(content).context(ParseString)
-    String::from_utf8(content).map_err(|_| ParseString2.build().into())
+    Ok(String::from_utf8(content).context(ParseString)?)
 }
 
 pub async fn handle_string(mut data: Field) -> CCFSResult<String> {
@@ -24,7 +23,7 @@ pub async fn handle_string(mut data: Field) -> CCFSResult<String> {
     while let Some(Ok(bytes)) = data.next().await {
         content.extend(bytes.as_ref());
     }
-    String::from_utf8(content).map_err(|_| ParseString2.build().into())
+    Ok(String::from_utf8(content).context(ParseString)?)
 }
 
 pub async fn handle_file(mut data: Field, path: &str) -> CCFSResult<()> {

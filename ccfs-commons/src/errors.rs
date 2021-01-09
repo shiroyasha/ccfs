@@ -44,11 +44,8 @@ pub enum Error {
         path: PathBuf,
     },
 
-    #[snafu(display("Unable to parse to String"/* , source */))]
+    #[snafu(display("Unable to parse to String: {}", source))]
     ParseString { source: std::string::FromUtf8Error },
-
-    #[snafu(display("Unable to parse to String"/* , source */))]
-    ParseString2,
 }
 
 impl ResponseError for Error {
@@ -56,11 +53,9 @@ impl ResponseError for Error {
         use Error::*;
         let display = format!("{}", self);
         match self {
-            Create { .. }
-            | Read { .. }
-            | Write { .. }
-            | ParseString { .. }
-            | ParseString2 { .. } => ErrorUnprocessableEntity(display).into(), // Error::MissingPart => ErrorBadRequest(display).into(),
+            Create { .. } | Read { .. } | Write { .. } | ParseString { .. } => {
+                ErrorUnprocessableEntity(display).into()
+            }
         }
     }
 }
