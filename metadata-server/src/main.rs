@@ -1,12 +1,11 @@
-mod data;
 mod errors;
 mod routes;
 mod snapshot;
 
 use actix_web::web::scope;
 use actix_web::{App, HttpServer};
+use ccfs_commons::data::Data;
 use ccfs_commons::{Chunk, ChunkServer, File, FileMetadata};
-use data::Data;
 use errors::*;
 use routes::{
     chunk_server_ping, create_file, get_chunks, get_file, get_server, get_servers,
