@@ -1,12 +1,23 @@
+use actix_web::error::{ErrorBadRequest, ErrorUnprocessableEntity};
 use actix_web::{HttpResponse, ResponseError};
+use ccfs_commons::errors::CCFSResponseError;
 use snafu::Snafu;
 use std::path::PathBuf;
 
-pub type Result<T, E = Error> = std::result::Result<T, E>;
+impl From<Error> for CCFSResponseError {
+    fn from(error: Error) -> CCFSResponseError {
+        CCFSResponseError {
+            inner: Box::new(error),
+        }
+    }
+}
 
 #[derive(Debug, Snafu)]
 #[snafu(visibility = "pub(crate)")]
 pub enum Error {
+    #[snafu(display("{}", inner))]
+    Base { inner: ccfs_commons::errors::Error },
+
     #[snafu(display("Unable to create {}: {}", path.display(), source))]
     Create {
         source: tokio::io::Error,
@@ -44,10 +55,8 @@ pub enum Error {
         text: String,
     },
 
-    #[snafu(display("Communication error with metadata server: {}", source))]
-    MetaServerCommunication {
-        source: actix_web::client::SendRequestError,
-    },
+    #[snafu(display("Communication error with metadata server: {}", reason))]
+    MetaServerCommunication { reason: String },
 
     #[snafu(display("Missing some form parts"))]
     MissingPart,
@@ -55,17 +64,19 @@ pub enum Error {
 
 impl ResponseError for Error {
     fn error_response(&self) -> HttpResponse {
+        let display = format!("{}", self);
         match self {
-            Error::Write { .. }
+            Error::Base { .. }
+            | Error::Write { .. }
             | Error::Read { .. }
             | Error::Create { .. }
             | Error::Rename { .. }
             | Error::MetaServerCommunication { .. }
             | Error::ParseString { .. }
             | Error::ParseUuid { .. }
-            | Error::ParseNumber { .. } => HttpResponse::UnprocessableEntity().finish(),
+            | Error::ParseNumber { .. } => ErrorUnprocessableEntity(display).into(),
 
-            Error::MissingPart => HttpResponse::BadRequest().finish(),
+            Error::MissingPart => ErrorBadRequest(display).into(),
         }
     }
 }

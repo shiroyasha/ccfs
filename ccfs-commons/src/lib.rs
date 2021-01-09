@@ -1,3 +1,8 @@
+pub mod data;
+pub mod errors;
+pub mod http_utils;
+pub mod result;
+
 use actix_web::dev::Payload;
 use actix_web::error::ErrorBadRequest;
 use actix_web::{Error as ReqError, FromRequest, HttpRequest};

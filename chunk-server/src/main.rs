@@ -1,8 +1,8 @@
 mod errors;
 mod routes;
 
-use actix_web::web::{get, post, resource, scope, Data};
-use actix_web::{client::Client, App, HttpServer};
+use actix_web::{client::Client, web, App, HttpServer};
+use ccfs_commons::data::Data;
 use futures::future::FutureExt;
 use routes::{download, upload};
 use std::env;
@@ -53,14 +53,10 @@ async fn main() -> std::io::Result<()> {
     task::spawn_local(start_ping_job(server_addr, metadata_url, server_id));
     HttpServer::new(move || {
         App::new()
-            .app_data(meta_url_state.clone())
-            .app_data(id_state.clone())
-            .app_data(upload_path_state.clone())
-            .service(
-                scope("/api")
-                    .service(resource("/upload").route(post().to(upload)))
-                    .service(resource("/download/{chunk_name}").route(get().to(download))),
-            )
+            .data(meta_url_state.clone())
+            .data(id_state.clone())
+            .data(upload_path_state.clone())
+            .service(web::scope("/api").service(upload).service(download))
     })
     .bind(&addr)?
     .run()
