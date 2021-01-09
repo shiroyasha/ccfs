@@ -2,7 +2,9 @@ mod errors;
 mod file_ops;
 
 use actix_web::client::Client;
-use errors::{FileAction, Result};
+use ccfs_commons::errors::CCFSResponseError;
+use ccfs_commons::result::CCFSResult;
+use errors::*;
 use file_ops::{download, list, tree, upload};
 use snafu::ResultExt;
 use std::collections::HashMap;
@@ -48,33 +50,32 @@ enum Command {
 }
 
 #[actix_web::main]
-async fn main() -> Result<()> {
+async fn main() -> CCFSResult<()> {
     let opts = CliOpts::from_args();
     let path = Path::new(&opts.config);
     if !path.exists() {
-        return Err(errors::FileNotExist { path }.build());
+        return Err(FileNotExist { path }.build().into());
     }
     if path.is_dir() {
-        return Err(errors::NotAFile { path }.build());
+        return Err(NotAFile { path }.build().into());
     }
 
-    let mut config_file = FileFS::open(path).await.context(errors::FileIO {
+    let mut config_file = FileFS::open(path).await.context(FileIO {
         path,
         action: FileAction::Open,
     })?;
     let mut content = String::new();
     FileFS::read_to_string(&mut config_file, &mut content)
         .await
-        .context(errors::FileIO {
+        .context(FileIO {
             path,
             action: FileAction::Read,
         })?;
-    let config_map: HashMap<String, String> =
-        serde_yaml::from_str(&content).context(errors::ParseYaml)?;
+    let config_map: HashMap<String, String> = serde_yaml::from_str(&content).context(ParseYaml)?;
     let key = "metadata-server-url";
     let meta_url = config_map
         .get(key)
-        .ok_or_else(|| errors::MissingConfigVal { key }.build())?;
+        .ok_or_else(|| CCFSResponseError::from(MissingConfigVal { key }.build()))?;
 
     let client = Client::new();
     match opts.cmd {
@@ -83,6 +84,6 @@ async fn main() -> Result<()> {
         Command::Remove { file_path: _path } => unimplemented!(),
         Command::List => list(&client, &meta_url).await?,
         Command::Tree => tree(&client, &meta_url).await?,
-    }
+    };
     Ok(())
 }

@@ -1,9 +1,18 @@
+use actix_web::error::ErrorUnprocessableEntity;
+use actix_web::{HttpResponse, ResponseError};
+use ccfs_commons::errors::CCFSResponseError;
 use snafu::Snafu;
 use std::fmt;
 use std::path::PathBuf;
 use uuid::Uuid;
 
-pub type Result<T, E = Error> = std::result::Result<T, E>;
+impl From<Error> for CCFSResponseError {
+    fn from(error: Error) -> CCFSResponseError {
+        CCFSResponseError {
+            inner: Box::new(error),
+        }
+    }
+}
 
 #[derive(Debug, Snafu)]
 #[snafu(visibility = "pub(crate)")]
@@ -76,6 +85,28 @@ impl fmt::Display for FileAction {
             FileAction::Write => write!(f, "write"),
             FileAction::Create => write!(f, "create"),
             FileAction::Open => write!(f, "open"),
+        }
+    }
+}
+
+impl<'a> ResponseError for Error {
+    fn error_response(&self) -> HttpResponse {
+        use Error::*;
+        let display = format!("{}", self);
+        match self {
+            ReadMetadata { .. }
+            | FailedRequest { .. }
+            | ParseJson { .. }
+            | ParseBytes { .. }
+            | ParseYaml { .. }
+            | FileIO { .. }
+            | ChunkNotAvailable { .. }
+            | SomeChunksNotAvailable { .. }
+            | UploadChunks { .. }
+            | UploadSingleChunk { .. }
+            | FileNotExist { .. }
+            | NotAFile { .. }
+            | MissingConfigVal { .. } => ErrorUnprocessableEntity(display).into(),
         }
     }
 }
