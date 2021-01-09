@@ -66,8 +66,9 @@ impl ResponseError for Error {
     fn error_response(&self) -> HttpResponse {
         let display = format!("{}", self);
         match self {
-            Error::Base { .. }
-            | Error::Write { .. }
+            Error::Base { inner } => inner.error_response(),
+
+            Error::Write { .. }
             | Error::Read { .. }
             | Error::Create { .. }
             | Error::Rename { .. }
