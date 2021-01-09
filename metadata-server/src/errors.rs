@@ -1,9 +1,16 @@
 use actix_web::error::ErrorUnprocessableEntity;
 use actix_web::{HttpResponse, ResponseError};
+use ccfs_commons::errors::CCFSResponseError;
 use snafu::Snafu;
 use std::path::PathBuf;
 
-pub type CCFSResult<T, E = Error> = Result<T, E>;
+impl From<Error> for CCFSResponseError {
+    fn from(error: Error) -> CCFSResponseError {
+        CCFSResponseError {
+            inner: Box::new(error),
+        }
+    }
+}
 
 #[derive(Debug, Snafu)]
 #[snafu(visibility = "pub(crate)")]

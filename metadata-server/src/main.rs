@@ -5,6 +5,7 @@ mod snapshot;
 use actix_web::web::scope;
 use actix_web::{App, HttpServer};
 use ccfs_commons::data::Data;
+use ccfs_commons::result::CCFSResult;
 use ccfs_commons::{Chunk, ChunkServer, File, FileMetadata};
 use errors::*;
 use routes::{
