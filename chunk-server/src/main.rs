@@ -1,9 +1,9 @@
 mod errors;
 mod routes;
 
-use actix_web::web::{get, post, resource, scope, Data};
-use actix_web::{client::Client, App, HttpServer};
-use futures::future::FutureExt;
+use actix_web::{client::Client, web, App, HttpServer};
+use ccfs_commons::data::Data;
+use ccfs_commons::http_utils::read_body;
 use routes::{download, upload};
 use std::env;
 use std::path::PathBuf;
@@ -20,14 +20,23 @@ pub type ServerID = Uuid;
 pub type UploadsDir = PathBuf;
 
 async fn start_ping_job(address: String, metadata_url: String, server_id: String) {
+    let client = Client::new();
     loop {
-        let _res = Client::new()
+        let res = client
             .post(&format!("{}/api/ping", metadata_url))
             .header("x-chunk-server-id", server_id.clone())
             .header("x-chunk-server-address", address.clone())
             .send()
-            .boxed_local()
             .await;
+        match res {
+            Ok(s) => match s.status().is_success() {
+                true => println!("successfully pinged meta server"),
+                false => println!("ping failed: {:?}", read_body(s).await),
+            },
+            Err(err) => {
+                println!("ping failed: {}", err)
+            }
+        }
         delay_for(Duration::from_secs(5)).await;
     }
 }
@@ -53,14 +62,10 @@ async fn main() -> std::io::Result<()> {
     task::spawn_local(start_ping_job(server_addr, metadata_url, server_id));
     HttpServer::new(move || {
         App::new()
-            .app_data(meta_url_state.clone())
-            .app_data(id_state.clone())
-            .app_data(upload_path_state.clone())
-            .service(
-                scope("/api")
-                    .service(resource("/upload").route(post().to(upload)))
-                    .service(resource("/download/{chunk_name}").route(get().to(download))),
-            )
+            .data(meta_url_state.clone())
+            .data(id_state.clone())
+            .data(upload_path_state.clone())
+            .service(web::scope("/api").service(upload).service(download))
     })
     .bind(&addr)?
     .run()
