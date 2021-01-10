@@ -2,13 +2,11 @@ use crate::errors::*;
 use crate::{MetadataUrl, ServerID, UploadsDir};
 use actix_multipart::Multipart;
 use actix_web::{client::Client, get, post, web, HttpResponse};
-use ccfs_commons::data::Data;
 use ccfs_commons::http_utils::{handle_file, handle_string, read_body};
-use ccfs_commons::result::CCFSResult;
-use ccfs_commons::Chunk;
+use ccfs_commons::{data::Data, Chunk};
+use ccfs_commons::{errors::Error as BaseError, result::CCFSResult};
 use fs::{create_dir_all, rename};
 use futures::TryStreamExt;
-use snafu::ResultExt;
 use std::collections::HashMap;
 use std::str::FromStr;
 use tokio::fs::{self, File};
@@ -24,7 +22,12 @@ pub async fn upload(
 ) -> CCFSResult<HttpResponse> {
     let path = &dir.join(".tmp");
     if !path.exists() {
-        create_dir_all(&path).await.context(Create { path })?;
+        create_dir_all(&path)
+            .await
+            .map_err(|source| BaseError::Create {
+                path: path.into(),
+                source,
+            })?;
     }
     let mut parts: HashMap<String, String> = HashMap::new();
     while let Ok(Some(field)) = data.try_next().await {
@@ -52,13 +55,25 @@ pub async fn upload(
     let file_id_str = parts.remove("file_id").unwrap_or_else(|| unreachable!());
     let file_path_str = parts.remove("file").unwrap_or_else(|| unreachable!());
 
-    let id = Uuid::from_str(&id_str).context(ParseUuid { text: id_str })?;
-    let file_id = Uuid::from_str(&file_id_str).context(ParseUuid { text: file_id_str })?;
+    let id = Uuid::from_str(&id_str).map_err(|source| BaseError::ParseUuid {
+        text: id_str,
+        source,
+    })?;
+    let file_id = Uuid::from_str(&file_id_str).map_err(|source| BaseError::ParseUuid {
+        text: file_id_str,
+        source,
+    })?;
 
     let chunk = Chunk::new(id, file_id, server.inner);
     let from = file_path_str;
     let to = &dir.join(chunk.chunk_name());
-    rename(&from, to).await.context(Rename { from, to })?;
+    rename(&from, to)
+        .await
+        .map_err(|source| BaseError::Rename {
+            from: from.into(),
+            to: to.into(),
+            source,
+        })?;
 
     let resp = Client::new()
         .post(&format!("{}/api/chunk/completed", meta_url.inner))
@@ -83,6 +98,8 @@ pub async fn download(
     dir: web::Data<Data<UploadsDir>>,
 ) -> CCFSResult<HttpResponse> {
     let path = dir.join(&info.into_inner());
-    let file = File::open(&path).await.context(Read { path })?;
+    let file = File::open(&path)
+        .await
+        .map_err(|source| BaseError::Read { path, source })?;
     Ok(HttpResponse::Ok().streaming(reader_stream(file)))
 }

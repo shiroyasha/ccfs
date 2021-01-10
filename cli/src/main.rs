@@ -2,7 +2,7 @@ mod errors;
 mod file_ops;
 
 use actix_web::client::Client;
-use ccfs_commons::errors::CCFSResponseError;
+use ccfs_commons::errors::{CCFSResponseError, Error as BaseError};
 use ccfs_commons::result::CCFSResult;
 use errors::*;
 use file_ops::{download, list, tree, upload};
@@ -60,16 +60,16 @@ async fn main() -> CCFSResult<()> {
         return Err(NotAFile { path }.build().into());
     }
 
-    let mut config_file = FileFS::open(path).await.context(FileIO {
-        path,
-        action: FileAction::Open,
+    let mut config_file = FileFS::open(path).await.map_err(|source| BaseError::Open {
+        path: path.into(),
+        source,
     })?;
     let mut content = String::new();
     FileFS::read_to_string(&mut config_file, &mut content)
         .await
-        .context(FileIO {
-            path,
-            action: FileAction::Read,
+        .map_err(|source| BaseError::Read {
+            path: path.into(),
+            source,
         })?;
     let config_map: HashMap<String, String> = serde_yaml::from_str(&content).context(ParseYaml)?;
     let key = "metadata-server-url";

@@ -1,8 +1,6 @@
-use crate::errors::*;
 use crate::FileMetadataTree;
-use ccfs_commons::result::CCFSResult;
+use ccfs_commons::{errors::Error as BaseError, result::CCFSResult};
 use futures::future::{FutureExt, LocalBoxFuture};
-use snafu::ResultExt;
 use std::path::PathBuf;
 use tokio::fs::{create_dir_all, rename, File as FileFS};
 use tokio::io::AsyncWriteExt;
@@ -42,19 +40,32 @@ fn create_snapshot(
         if !upload_path.exists() {
             create_dir_all(&upload_path)
                 .await
-                .context(IOCreate { path: &upload_path })?;
+                .map_err(|source| BaseError::Create {
+                    path: upload_path,
+                    source,
+                })?;
         }
-        let mut temp_file = FileFS::create(&temp_path)
-            .await
-            .context(IOCreate { path: &temp_path })?;
+        let mut temp_file =
+            FileFS::create(&temp_path)
+                .await
+                .map_err(|source| BaseError::Create {
+                    path: temp_path.clone(),
+                    source,
+                })?;
         temp_file
             .write_all(&bincode::serialize(&*metadata_tree).unwrap())
             .await
-            .context(IOWrite { path: &temp_path })?;
-        rename(&temp_path, &snapshot_path).await.context(Rename {
-            from: temp_path,
-            to: snapshot_path,
-        })?;
+            .map_err(|source| BaseError::Write {
+                path: temp_path.clone(),
+                source,
+            })?;
+        rename(&temp_path, &snapshot_path)
+            .await
+            .map_err(|source| BaseError::Rename {
+                from: temp_path,
+                to: snapshot_path,
+                source,
+            })?;
         Ok(())
     }
     .boxed_local()

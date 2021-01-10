@@ -5,7 +5,7 @@ mod snapshot;
 use actix_web::web::scope;
 use actix_web::{App, HttpServer};
 use ccfs_commons::data::Data;
-use ccfs_commons::result::CCFSResult;
+use ccfs_commons::{errors::Error as BaseError, result::CCFSResult};
 use ccfs_commons::{Chunk, ChunkServer, File, FileMetadata};
 use errors::*;
 use routes::{
@@ -28,7 +28,10 @@ pub type FileMetadataTree = Arc<RwLock<FileMetadata>>;
 async fn init_metadata_tree(path: &Path) -> CCFSResult<FileMetadataTree> {
     let tree = match path.exists() {
         true => {
-            let file = FileFS::open(path).context(IORead { path })?;
+            let file = FileFS::open(path).map_err(|source| BaseError::Read {
+                path: path.into(),
+                source,
+            })?;
             bincode::deserialize_from(&file).context(Deserialize)?
         }
         false => FileMetadata::create_root(),

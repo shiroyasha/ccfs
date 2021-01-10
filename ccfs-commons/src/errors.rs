@@ -1,20 +1,12 @@
 use std::path::PathBuf;
 
-use actix_web::error::ErrorUnprocessableEntity;
+use actix_web::error::{ErrorBadRequest, ErrorInternalServerError};
 use actix_web::{HttpResponse, ResponseError};
 use snafu::Snafu;
 
 #[derive(Debug, Snafu)]
 pub struct CCFSResponseError {
     pub inner: Box<dyn ResponseError>,
-}
-
-impl From<Error> for CCFSResponseError {
-    fn from(error: Error) -> CCFSResponseError {
-        CCFSResponseError {
-            inner: Box::new(error),
-        }
-    }
 }
 
 impl ResponseError for CCFSResponseError {
@@ -32,6 +24,12 @@ pub enum Error {
         path: PathBuf,
     },
 
+    #[snafu(display("Unable to open {}: {}", path.display(), source))]
+    Open {
+        source: tokio::io::Error,
+        path: PathBuf,
+    },
+
     #[snafu(display("Unable to read {}: {}", path.display(), source))]
     Read {
         source: tokio::io::Error,
@@ -44,8 +42,18 @@ pub enum Error {
         path: PathBuf,
     },
 
+    #[snafu(display("Unable to rename from {} to {}: {}", from.display(), to.display(), source))]
+    Rename {
+        source: tokio::io::Error,
+        from: PathBuf,
+        to: PathBuf,
+    },
+
     #[snafu(display("Unable to parse to String: {}", source))]
     ParseString { source: std::string::FromUtf8Error },
+
+    #[snafu(display("Unable to parse uuid {}: {}", text, source))]
+    ParseUuid { source: uuid::Error, text: String },
 }
 
 impl ResponseError for Error {
@@ -53,9 +61,18 @@ impl ResponseError for Error {
         use Error::*;
         let display = format!("{}", self);
         match self {
-            Create { .. } | Read { .. } | Write { .. } | ParseString { .. } => {
-                ErrorUnprocessableEntity(display).into()
+            Create { .. } | Open { .. } | Read { .. } | Write { .. } | Rename { .. } => {
+                ErrorInternalServerError(display).into()
             }
+            ParseString { .. } | ParseUuid { .. } => ErrorBadRequest(display).into(),
+        }
+    }
+}
+
+impl From<Error> for CCFSResponseError {
+    fn from(error: Error) -> CCFSResponseError {
+        CCFSResponseError {
+            inner: Box::new(error),
         }
     }
 }

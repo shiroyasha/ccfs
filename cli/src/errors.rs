@@ -1,27 +1,15 @@
-use actix_web::error::ErrorUnprocessableEntity;
+use actix_web::error::{ErrorBadRequest, ErrorInternalServerError};
 use actix_web::{HttpResponse, ResponseError};
 use ccfs_commons::errors::CCFSResponseError;
 use snafu::Snafu;
-use std::fmt;
 use std::path::PathBuf;
 use uuid::Uuid;
-
-impl From<Error> for CCFSResponseError {
-    fn from(error: Error) -> CCFSResponseError {
-        CCFSResponseError {
-            inner: Box::new(error),
-        }
-    }
-}
 
 #[derive(Debug, Snafu)]
 #[snafu(visibility = "pub(crate)")]
 pub enum Error {
-    #[snafu(display("Unable to read file metadata {}: {}", path.display(), source))]
-    ReadMetadata {
-        source: tokio::io::Error,
-        path: PathBuf,
-    },
+    #[snafu(display("{}", source))]
+    Base { source: ccfs_commons::errors::Error },
 
     #[snafu(display("Request to {} failed: {}", url, source))]
     FailedRequest {
@@ -41,13 +29,6 @@ pub enum Error {
 
     #[snafu(display("Unable to parse yaml: {}", source))]
     ParseYaml { source: serde_yaml::Error },
-
-    #[snafu(display("Unable to {} file {}: {}", action, path.display(), source))]
-    FileIO {
-        source: tokio::io::Error,
-        path: PathBuf,
-        action: FileAction,
-    },
 
     #[snafu(display("Chunk {} is currently not available", chunk_name))]
     ChunkNotAvailable { chunk_name: String },
@@ -71,42 +52,31 @@ pub enum Error {
     MissingConfigVal { key: String },
 }
 
-#[derive(Debug, Clone, Copy)]
-pub enum FileAction {
-    Read,
-    Write,
-    Create,
-    Open,
-}
-impl fmt::Display for FileAction {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            FileAction::Read => write!(f, "read"),
-            FileAction::Write => write!(f, "write"),
-            FileAction::Create => write!(f, "create"),
-            FileAction::Open => write!(f, "open"),
-        }
-    }
-}
-
 impl<'a> ResponseError for Error {
     fn error_response(&self) -> HttpResponse {
         use Error::*;
         let display = format!("{}", self);
         match self {
-            ReadMetadata { .. }
-            | FailedRequest { .. }
-            | ParseJson { .. }
-            | ParseBytes { .. }
-            | ParseYaml { .. }
-            | FileIO { .. }
+            Base { source } => source.error_response(),
+            ParseJson { .. } | ParseBytes { .. } | ParseYaml { .. } => {
+                ErrorBadRequest(display).into()
+            }
+            FailedRequest { .. }
             | ChunkNotAvailable { .. }
             | SomeChunksNotAvailable { .. }
             | UploadChunks { .. }
             | UploadSingleChunk { .. }
             | FileNotExist { .. }
             | NotAFile { .. }
-            | MissingConfigVal { .. } => ErrorUnprocessableEntity(display).into(),
+            | MissingConfigVal { .. } => ErrorInternalServerError(display).into(),
+        }
+    }
+}
+
+impl From<Error> for CCFSResponseError {
+    fn from(error: Error) -> CCFSResponseError {
+        CCFSResponseError {
+            inner: Box::new(error),
         }
     }
 }

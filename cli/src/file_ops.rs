@@ -3,7 +3,7 @@ use actix_web::body::BodyStream;
 use actix_web::client::{Client, ClientResponse};
 use actix_web::dev::{Decompress, Payload};
 use actix_web::http::header::CONTENT_TYPE;
-use ccfs_commons::result::CCFSResult;
+use ccfs_commons::{errors::Error as BaseError, result::CCFSResult};
 use ccfs_commons::{Chunk, ChunkServer, File, FileInfo, FileMetadata, CHUNK_SIZE};
 use futures::future::join_all;
 use mpart_async::client::MultipartRequest;
@@ -46,10 +46,7 @@ pub async fn upload<T: AsRef<Path>>(c: &Client, meta_url: &str, file_path: T) ->
         if curr.is_dir() {
             paths.extend(
                 curr.read_dir()
-                    .context(FileIO {
-                        path: curr.clone(),
-                        action: FileAction::Open,
-                    })?
+                    .map_err(|source| BaseError::Open { path: curr, source })?
                     .filter_map(|item| item.ok())
                     .map(|item| item.path()),
             );
@@ -60,7 +57,10 @@ pub async fn upload<T: AsRef<Path>>(c: &Client, meta_url: &str, file_path: T) ->
 
 pub async fn upload_item(c: &Client, meta_url: &str, path: &Path, prefix: &Path) -> CCFSResult<()> {
     let mut chunks = Vec::new();
-    let file_meta = path.metadata().context(ReadMetadata { path })?;
+    let file_meta = path.metadata().map_err(|source| BaseError::Read {
+        path: path.into(),
+        source,
+    })?;
     let file_name = path.file_name().unwrap().to_str().unwrap().to_string();
     let file_data = match file_meta.is_dir() {
         true => FileMetadata::create_dir(file_name),
@@ -123,12 +123,17 @@ pub async fn upload_chunk(
     slice.shuffle(&mut thread_rng());
     let chunk_file_name = format!("{}-{}", &chunk_id, &file_id);
     let content_type = "application/octet-stream";
-    let action = FileAction::Open;
     for server in servers {
-        let mut f = FileFS::open(path).await.context(FileIO { path, action })?;
+        let mut f = FileFS::open(path).await.map_err(|source| BaseError::Open {
+            path: path.into(),
+            source,
+        })?;
         f.seek(SeekFrom::Start(part as u64 * CHUNK_SIZE))
             .await
-            .context(FileIO { path, action })?;
+            .map_err(|source| BaseError::Open {
+                path: path.into(),
+                source,
+            })?;
         let stream = reader_stream(f.take(CHUNK_SIZE));
         let mut mpart = MultipartRequest::default();
         mpart.add_field("chunk_id", &chunk_id.to_string());
@@ -167,10 +172,12 @@ pub async fn download<T: AsRef<Path>>(
         match curr_f.file_info {
             FileInfo::Directory(name) => {
                 let new_path = curr_path.join(name);
-                create_dir(&new_path).await.context(FileIO {
-                    path: new_path.clone(),
-                    action: FileAction::Create,
-                })?;
+                create_dir(&new_path)
+                    .await
+                    .map_err(|source| BaseError::Create {
+                        path: new_path.clone(),
+                        source,
+                    })?;
                 items.extend(
                     &mut curr_f
                         .children
@@ -197,10 +204,12 @@ pub async fn download_file(
     let path = target_path.as_path();
     let chunks: Vec<Chunk> = get_request_json(c, &chunks_url).await?;
     let groups = chunks.linear_group_by_key(|a| a.id);
-    let mut file = FileFS::create(path).await.context(FileIO {
-        path,
-        action: FileAction::Create,
-    })?;
+    let mut file = FileFS::create(path)
+        .await
+        .map_err(|source| BaseError::Create {
+            path: path.into(),
+            source,
+        })?;
     let requests = groups
         .map(|group| download_chunk(c, group, meta_url))
         .collect::<Vec<_>>();
@@ -216,10 +225,12 @@ pub async fn download_file(
     for curr_chunk_id in &file_info.chunks {
         let mut payload = responses.remove(curr_chunk_id).unwrap();
         while let Some(Ok(mut bytes)) = payload.next().await {
-            file.write_buf(&mut bytes).await.context(FileIO {
-                path,
-                action: FileAction::Write,
-            })?;
+            file.write_buf(&mut bytes)
+                .await
+                .map_err(|source| BaseError::Write {
+                    path: path.into(),
+                    source,
+                })?;
         }
     }
     Ok(())
