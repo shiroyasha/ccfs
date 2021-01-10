@@ -3,6 +3,7 @@ use actix_web::body::BodyStream;
 use actix_web::client::{Client, ClientResponse};
 use actix_web::dev::{Decompress, Payload};
 use actix_web::http::header::CONTENT_TYPE;
+use ccfs_commons::http_utils::read_body;
 use ccfs_commons::{errors::Error as BaseError, result::CCFSResult};
 use ccfs_commons::{Chunk, ChunkServer, File, FileInfo, FileMetadata, CHUNK_SIZE};
 use futures::future::join_all;
@@ -244,26 +245,32 @@ pub async fn download_chunk(
     let chunk_name = chunks[0].chunk_name();
     for chunk in chunks {
         let chunk_servers_url = format!("{}/api/servers/{}", meta_url, &chunk.server_id);
-        let mut resp = get_request(c, &chunk_servers_url).await?;
-        if resp.status().is_success() {
-            let server: ChunkServer = resp.json().await.context(ParseJson)?;
-            let download_url = format!("{}/api/download/{}", server.address, chunk.chunk_name());
-            let download_resp = get_request(c, &download_url).await?;
-            if download_resp.status().is_success() {
-                return Ok((chunk.id, download_resp));
-            }
+        let server: ChunkServer = get_request_json(c, &chunk_servers_url).await?;
+        let download_url = format!("{}/api/download/{}", server.address, chunk.chunk_name());
+        let download_resp = get_request(c, &download_url).await?;
+        if download_resp.status().is_success() {
+            return Ok((chunk.id, download_resp));
         }
     }
     Err(ChunkNotAvailable { chunk_name }.build().into())
 }
 
 async fn get_request(c: &Client, url: &str) -> CCFSResult<Response> {
-    Ok(c.get(url).send().await.context(FailedRequest { url })?)
+    let resp = c.get(url).send().await.context(FailedRequest { url })?;
+    match resp.status().is_success() {
+        true => Ok(resp),
+        false => Err(BaseError::Unsuccessful {
+            response: read_body(resp).await?,
+        }
+        .into()),
+    }
 }
+
 async fn get_request_json<T: DeserializeOwned>(c: &Client, url: &str) -> CCFSResult<T> {
     let mut resp = get_request(c, url).await?;
     Ok(resp.json().await.context(ParseJson)?)
 }
+
 async fn post_request<T: Serialize>(c: &Client, url: &str, data: T) -> CCFSResult<Response> {
     Ok(c.post(url)
         .send_json(&data)

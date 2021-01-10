@@ -3,7 +3,7 @@ mod routes;
 
 use actix_web::{client::Client, web, App, HttpServer};
 use ccfs_commons::data::Data;
-use futures::future::FutureExt;
+use ccfs_commons::http_utils::read_body;
 use routes::{download, upload};
 use std::env;
 use std::path::PathBuf;
@@ -20,14 +20,23 @@ pub type ServerID = Uuid;
 pub type UploadsDir = PathBuf;
 
 async fn start_ping_job(address: String, metadata_url: String, server_id: String) {
+    let client = Client::new();
     loop {
-        let _res = Client::new()
+        let res = client
             .post(&format!("{}/api/ping", metadata_url))
             .header("x-chunk-server-id", server_id.clone())
             .header("x-chunk-server-address", address.clone())
             .send()
-            .boxed_local()
             .await;
+        match res {
+            Ok(s) => match s.status().is_success() {
+                true => println!("successfully pinged meta server"),
+                false => println!("ping failed: {:?}", read_body(s).await),
+            },
+            Err(err) => {
+                println!("ping failed: {}", err)
+            }
+        }
         delay_for(Duration::from_secs(5)).await;
     }
 }

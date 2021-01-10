@@ -54,6 +54,9 @@ pub enum Error {
 
     #[snafu(display("Unable to parse uuid {}: {}", text, source))]
     ParseUuid { source: uuid::Error, text: String },
+
+    #[snafu(display("Request failed: {}", response))]
+    Unsuccessful { response: String },
 }
 
 impl ResponseError for Error {
@@ -61,9 +64,12 @@ impl ResponseError for Error {
         use Error::*;
         let display = format!("{}", self);
         match self {
-            Create { .. } | Open { .. } | Read { .. } | Write { .. } | Rename { .. } => {
-                ErrorInternalServerError(display).into()
-            }
+            Create { .. }
+            | Open { .. }
+            | Read { .. }
+            | Write { .. }
+            | Rename { .. }
+            | Unsuccessful { .. } => ErrorInternalServerError(display).into(),
             ParseString { .. } | ParseUuid { .. } => ErrorBadRequest(display).into(),
         }
     }
