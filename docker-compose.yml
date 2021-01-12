@@ -1,4 +1,4 @@
-version: '3.6'
+version: '3.9'
 
 #
 # This a development environment. It is running:
@@ -18,15 +18,14 @@ services:
     build:
       context: .
       dockerfile: ./metadata-server/Dockerfile.dev
-
-    command: "bash -c 'cd metadata-server && cargo run'"
     ports:
-      - "4000:8000"
-
+      - "4000:4000"
     volumes:
       - ./ccfs-commons:/app/ccfs-commons
       - ./metadata-server:/app/metadata-server
-
+    environment:
+      HOST: "0.0.0.0"
+      PORT: "4000"
   #
   # Three chunk servers.
   #
@@ -38,47 +37,57 @@ services:
 
     command: "bash -c 'cd chunk-server && cargo run'"
     ports:
-      - "5001:8000"
+      - "5001:5001"
     volumes:
       - ./ccfs-commons:/app/ccfs-commons
       - ./chunk-server:/app/chunk-server
+    environment:
+      HOST: "0.0.0.0"
+      PORT: "5001"
+      METADATA_URL: http://host.docker.internal:4000
+      SERVER_ID: ec73d743-050b-4f52-992a-d1102340d739
 
   chunk_server_002:
     build:
       context: .
       dockerfile: ./chunk-server/Dockerfile.dev
-
-    command: "bash -c 'cd chunk-server && cargo run'"
     ports:
-      - "5002:8000"
+      - "5002:5002"
     volumes:
       - ./ccfs-commons:/app/ccfs-commons
       - ./chunk-server:/app/chunk-server
+    environment:
+      HOST: "0.0.0.0"
+      PORT: "5002"
+      METADATA_URL: http://host.docker.internal:4000
+      SERVER_ID: 1a6e7006-12a7-4935-b8c0-58fa7ea84b09
 
   chunk_server_003:
     build:
       context: .
       dockerfile: ./chunk-server/Dockerfile.dev
-
-    command: "bash -c 'cd chunk-server && cargo run'"
     ports:
-      - "5003:8000"
+      - "5003:5003"
     volumes:
       - ./ccfs-commons:/app/ccfs-commons
       - ./chunk-server:/app/chunk-server
+    environment:
+      HOST: "0.0.0.0"
+      PORT: "5003"
+      METADATA_URL: http://host.docker.internal:4000
+      SERVER_ID: 6d53a85f-505b-4a1a-ae6d-f7c18761d04a
 
   #
   # CLI environment.
   #
 
-  chunk_server_003:
+  cli:
     build:
       context: .
       dockerfile: ./cli/Dockerfile.dev
-
-    command: "bash"
-    ports:
-      - "5003:4000"
     volumes:
       - ./ccfs-commons:/app/ccfs-commons
       - ./cli:/app/cli
+      # Binds a dir containing some data to the container so that the there is some data to upload
+      # by running `make dev.cli upload ./data/some-file`
+      - ~/Downloads:/app/data

@@ -12,6 +12,8 @@ use tokio::task;
 use tokio::time::{delay_for, Duration};
 use uuid::Uuid;
 
+const HOST: &str = "HOST";
+const PORT: &str = "PORT";
 const METADATA_URL_KEY: &str = "METADATA_URL";
 const SERVER_ID_KEY: &str = "SERVER_ID";
 
@@ -41,12 +43,34 @@ async fn start_ping_job(address: String, metadata_url: String, server_id: String
     }
 }
 
+#[cfg(target_os = "linux")]
+fn get_ip() -> Option<String> {
+    get_private_ip("eth0")
+}
+
+#[cfg(target_os = "macos")]
+fn get_ip() -> Option<String> {
+    get_private_ip("en0")
+}
+
+fn get_private_ip(target_name: &str) -> Option<String> {
+    let interfaces = pnet::datalink::interfaces();
+    interfaces.iter().find(|i| i.name == target_name).map(|i| {
+        i.ips
+            .iter()
+            .find(|ip| ip.is_ipv4())
+            .map(|ip| ip.to_string())
+    })?
+}
+
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
-    let host = "127.0.0.1";
-    let port = "8000";
+    let host = env::var(HOST).unwrap_or_else(|_| "127.0.0.1".into());
+    let port = env::var(PORT).unwrap_or_else(|_| "8000".into());
+
+    let server_ip = get_ip().unwrap_or_else(|| "127.0.0.1".into());
+    let server_addr = format!("http://{}:{}", server_ip, port);
     let addr = format!("{}:{}", host, port);
-    let server_addr = format!("http://{}", addr);
     let metadata_url: MetadataUrl = env::var(METADATA_URL_KEY)
         .unwrap_or_else(|_| panic!("missing {} env variable", METADATA_URL_KEY));
     let server_id = env::var(SERVER_ID_KEY)

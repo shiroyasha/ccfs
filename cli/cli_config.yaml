@@ -1,3 +1,3 @@
 ## CCFS cli config file
 
-metadata-server-url: http://localhost:8080
+metadata-server-url: http://host.docker.internal:4000
