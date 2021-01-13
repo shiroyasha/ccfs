@@ -34,8 +34,6 @@ services:
     build:
       context: .
       dockerfile: ./chunk-server/Dockerfile.dev
-
-    command: "bash -c 'cd chunk-server && cargo run'"
     ports:
       - "5001:5001"
     volumes:
