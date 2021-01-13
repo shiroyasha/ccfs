@@ -159,11 +159,12 @@ impl FileMetadata {
                 let mut s = name.to_string();
                 while let Some(child) = iter.next() {
                     let prefix = if iter.peek().is_some() { "├" } else { "└" };
+                    let subdir_prefix = if iter.peek().is_some() { "│" } else { " " };
                     let subtree = child.print_subtree();
                     let mut lines_iter = subtree.lines();
                     s.push_str(&format!("\n{:─<2} {}", prefix, lines_iter.next().unwrap()));
                     for l in lines_iter {
-                        s.push_str(&format!("\n{:<2} {}", "│", l));
+                        s.push_str(&format!("\n{:<2} {}", subdir_prefix, l));
                     }
                 }
                 s
@@ -320,15 +321,8 @@ mod tests {
         Ok(())
     }
 
-    fn build() -> Result<FileMetadata, Box<dyn Error>> {
-        let mut trie = FileMetadata::create_root();
-        trie.insert_dir("dir1");
+    fn add_dir2(trie: &mut FileMetadata) -> Result<(), Box<dyn Error>> {
         trie.insert_dir("dir2");
-        trie.insert_file(
-            "some.zip",
-            0,
-            vec![Uuid::from_str("ec73d743-050b-4f52-992a-d1102340d739")?],
-        );
         let dir2 = trie.traverse_mut("dir2")?;
         dir2.insert_file(
             "test.txt",
@@ -343,6 +337,18 @@ mod tests {
             100,
             vec![Uuid::from_str("6d53a85f-505b-4a1a-ae6d-f7c18761d04a")?],
         );
+        Ok(())
+    }
+
+    fn build() -> Result<FileMetadata, Box<dyn Error>> {
+        let mut trie = FileMetadata::create_root();
+        trie.insert_dir("dir1");
+        add_dir2(&mut trie)?;
+        trie.insert_file(
+            "some.zip",
+            0,
+            vec![Uuid::from_str("ec73d743-050b-4f52-992a-d1102340d739")?],
+        );
 
         Ok(trie)
     }
@@ -351,7 +357,15 @@ mod tests {
     fn trie_print_subtree_test() -> Result<(), Box<dyn Error>> {
         let trie = build()?;
         let expected = std::fs::read_to_string("expected-tree.txt")?;
+        assert_eq!(trie.print_subtree(), expected);
+        Ok(())
+    }
 
+    #[test]
+    fn trie_print_single_dir_subtree_test() -> Result<(), Box<dyn Error>> {
+        let mut trie = FileMetadata::create_root();
+        add_dir2(&mut trie)?;
+        let expected = std::fs::read_to_string("expected-single-dir-tree.txt")?;
         assert_eq!(trie.print_subtree(), expected);
         Ok(())
     }
