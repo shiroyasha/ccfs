@@ -1,15 +1,14 @@
 mod errors;
+mod jobs;
 mod routes;
 
-use actix_web::{client::Client, web, App, HttpServer};
+use actix_web::{web, App, HttpServer};
 use ccfs_commons::data::Data;
-use ccfs_commons::http_utils::read_body;
 use routes::{download, upload};
 use std::env;
 use std::path::PathBuf;
 use std::str::FromStr;
 use tokio::task;
-use tokio::time::{delay_for, Duration};
 use uuid::Uuid;
 
 const HOST: &str = "HOST";
@@ -20,28 +19,6 @@ const SERVER_ID_KEY: &str = "SERVER_ID";
 pub type MetadataUrl = String;
 pub type ServerID = Uuid;
 pub type UploadsDir = PathBuf;
-
-async fn start_ping_job(address: String, metadata_url: String, server_id: String) {
-    let client = Client::new();
-    loop {
-        let res = client
-            .post(&format!("{}/api/ping", metadata_url))
-            .header("x-chunk-server-id", server_id.clone())
-            .header("x-chunk-server-address", address.clone())
-            .send()
-            .await;
-        match res {
-            Ok(s) => match s.status().is_success() {
-                true => println!("successfully pinged meta server"),
-                false => println!("ping failed: {:?}", read_body(s).await),
-            },
-            Err(err) => {
-                println!("ping failed: {}", err)
-            }
-        }
-        delay_for(Duration::from_secs(5)).await;
-    }
-}
 
 #[cfg(target_os = "linux")]
 fn get_ip() -> Option<String> {
@@ -83,7 +60,7 @@ async fn main() -> std::io::Result<()> {
     let meta_url_state = Data::new(metadata_url.clone());
     let id_state = Data::new(id);
     let upload_path_state = Data::new(upload_path.clone());
-    task::spawn_local(start_ping_job(server_addr, metadata_url, server_id));
+    task::spawn_local(jobs::start_ping_job(server_addr, metadata_url, server_id));
     HttpServer::new(move || {
         App::new()
             .data(meta_url_state.clone())
