@@ -12,10 +12,12 @@ dev.setup:
 # Skips running cli container.
 #
 dev.run:
+	./rebuild-dev.sh
 	docker-compose up --scale cli=0
 
 #
 # Runs the CLI environment entrypoint and forwards the command arguments to it.
 #
 dev.cli:
+	./rebuild-dev.sh cli
 	docker-compose run cli $(filter-out $@,$(MAKECMDGOALS))
