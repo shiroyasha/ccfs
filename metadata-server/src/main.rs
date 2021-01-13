@@ -14,6 +14,7 @@ use routes::{
 };
 use snafu::ResultExt;
 use std::collections::HashMap;
+use std::env;
 use std::fs::File as FileFS;
 use std::path::Path;
 use std::sync::{Arc, RwLock};
@@ -24,6 +25,9 @@ pub type ChunkServersMap = Arc<RwLock<HashMap<Uuid, ChunkServer>>>;
 pub type ChunksMap = Arc<RwLock<HashMap<Uuid, Chunk>>>;
 pub type FilesMap = Arc<RwLock<HashMap<Uuid, File>>>;
 pub type FileMetadataTree = Arc<RwLock<FileMetadata>>;
+
+const HOST: &str = "HOST";
+const PORT: &str = "PORT";
 
 async fn init_metadata_tree(path: &Path) -> CCFSResult<FileMetadataTree> {
     let tree = match path.exists() {
@@ -41,8 +45,8 @@ async fn init_metadata_tree(path: &Path) -> CCFSResult<FileMetadataTree> {
 
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
-    let host = "127.0.0.1";
-    let port = "8080";
+    let host = env::var(HOST).unwrap_or_else(|_| "127.0.0.1".into());
+    let port = env::var(PORT).unwrap_or_else(|_| "8000".into());
     let addr = format!("{}:{}", host, port);
 
     let upload_path = dirs::home_dir()
