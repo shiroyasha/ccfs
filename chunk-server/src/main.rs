@@ -59,7 +59,7 @@ fn get_private_ip(target_name: &str) -> Option<String> {
         i.ips
             .iter()
             .find(|ip| ip.is_ipv4())
-            .map(|ip| ip.to_string())
+            .map(|ip| ip.ip().to_string())
     })?
 }
 

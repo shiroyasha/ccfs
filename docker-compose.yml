@@ -86,8 +86,7 @@ services:
       context: .
       dockerfile: ./cli/Dockerfile.dev
     volumes:
-      - ./ccfs-commons:/app/ccfs-commons
-      - ./cli:/app/cli
+      - ./:/app
       # Binds a dir containing some data to the container so that the there is some data to upload
       # by running `make dev.cli upload ./data/some-file`
       - ~/Downloads:/app/data
