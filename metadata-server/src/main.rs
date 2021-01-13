@@ -23,7 +23,7 @@ use tokio::task;
 use uuid::Uuid;
 
 pub type ChunkServersMap = Arc<RwLock<HashMap<Uuid, ChunkServer>>>;
-pub type ChunksMap = Arc<RwLock<HashMap<Uuid, Chunk>>>;
+pub type ChunksMap = Arc<RwLock<HashMap<Uuid, HashSet<Chunk>>>>;
 pub type FilesMap = Arc<RwLock<HashMap<Uuid, File>>>;
 pub type FileMetadataTree = Arc<RwLock<FileMetadata>>;
 

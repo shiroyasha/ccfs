@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use crate::errors::*;
 use crate::{ChunkServersMap, ChunksMap, FileMetadataTree, FilesMap};
@@ -6,7 +6,7 @@ use actix_web::{get, post, web, HttpResponse};
 use ccfs_commons::data::Data;
 use ccfs_commons::result::CCFSResult;
 use ccfs_commons::{Chunk, ChunkServer, FileInfo, FileMetadata, FileStatus};
-use chrono::{DateTime, Duration, Utc};
+use chrono::{DateTime, Utc};
 use uuid::Uuid;
 
 /// Returns a list of available chunk servers where the file chunks can be uploaded
@@ -16,9 +16,7 @@ pub async fn get_servers(servers: web::Data<Data<ChunkServersMap>>) -> CCFSResul
     Ok(HttpResponse::Ok().json(
         servers_map
             .values()
-            .filter(|s| {
-                s.latest_ping_time.signed_duration_since(Utc::now()) <= Duration::seconds(6)
-            })
+            .filter(|s| s.is_active())
             .cloned()
             .collect::<Vec<ChunkServer>>(),
     ))
@@ -100,7 +98,10 @@ pub async fn signal_chuck_upload_completed(
     let file = files
         .get_mut(&chunk.file_id)
         .ok_or_else(|| NotFound.build())?;
-    chunks.insert(chunk.id, *chunk);
+    chunks
+        .entry(chunk.id)
+        .or_insert_with(HashSet::new)
+        .insert(*chunk);
 
     file.num_of_completed_chunks += 1;
     if file.num_of_completed_chunks == file.chunks.len() {
@@ -120,8 +121,10 @@ pub async fn get_chunks(
     Ok(HttpResponse::Ok().json(
         chunks_map
             .values()
-            .filter(|c| c.file_id == *file_id)
-            .copied()
-            .collect::<Vec<Chunk>>(),
+            .filter_map(|chs| match chs.iter().next() {
+                Some(c) if c.file_id == *file_id => Some(chs.iter().cloned().collect()),
+                _ => None,
+            })
+            .collect::<Vec<Vec<Chunk>>>(),
     ))
 }

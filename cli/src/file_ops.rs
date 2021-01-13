@@ -10,7 +10,6 @@ use futures::future::join_all;
 use mpart_async::client::MultipartRequest;
 use rand::{seq::SliceRandom, thread_rng};
 use serde::{de::DeserializeOwned, Serialize};
-use slice_group_by::GroupBy;
 use snafu::ResultExt;
 use std::collections::HashMap;
 use std::io::SeekFrom;
@@ -203,8 +202,7 @@ pub async fn download_file(
     let chunks_url = format!("{}/api/chunks/file/{}", meta_url, &file_info.id);
     let target_path = target_dir.join(&file_info.name);
     let path = target_path.as_path();
-    let chunks: Vec<Chunk> = get_request_json(c, &chunks_url).await?;
-    let groups = chunks.linear_group_by_key(|a| a.id);
+    let groups: Vec<Vec<Chunk>> = get_request_json(c, &chunks_url).await?;
     let mut file = FileFS::create(path)
         .await
         .map_err(|source| BaseError::Create {
@@ -212,6 +210,7 @@ pub async fn download_file(
             source,
         })?;
     let requests = groups
+        .iter()
         .map(|group| download_chunk(c, group, meta_url))
         .collect::<Vec<_>>();
     let expected_responses_count = requests.len();
