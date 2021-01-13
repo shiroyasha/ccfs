@@ -57,6 +57,12 @@ pub enum Error {
 
     #[snafu(display("Request failed: {}", response))]
     Unsuccessful { response: String },
+
+    #[snafu(display("Request to {} failed: {}", url, source))]
+    FailedRequest {
+        source: actix_web::client::SendRequestError,
+        url: String,
+    },
 }
 
 impl ResponseError for Error {
@@ -69,6 +75,7 @@ impl ResponseError for Error {
             | Read { .. }
             | Write { .. }
             | Rename { .. }
+            | FailedRequest { .. }
             | Unsuccessful { .. } => ErrorInternalServerError(display).into(),
             ParseString { .. } | ParseUuid { .. } => ErrorBadRequest(display).into(),
         }

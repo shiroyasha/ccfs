@@ -11,12 +11,6 @@ pub enum Error {
     #[snafu(display("{}", source))]
     Base { source: ccfs_commons::errors::Error },
 
-    #[snafu(display("Request to {} failed: {}", url, source))]
-    FailedRequest {
-        source: actix_web::client::SendRequestError,
-        url: String,
-    },
-
     #[snafu(display("Unable to parse to json: {}", source))]
     ParseJson {
         source: actix_web::client::JsonPayloadError,
@@ -61,8 +55,7 @@ impl<'a> ResponseError for Error {
             ParseJson { .. } | ParseBytes { .. } | ParseYaml { .. } => {
                 ErrorBadRequest(display).into()
             }
-            FailedRequest { .. }
-            | ChunkNotAvailable { .. }
+            ChunkNotAvailable { .. }
             | SomeChunksNotAvailable { .. }
             | UploadChunks { .. }
             | UploadSingleChunk { .. }
