@@ -553,6 +553,7 @@ dependencies = [
  "ccfs-commons",
  "dirs",
  "futures",
+ "mpart-async",
  "pnet",
  "sanitize-filename",
  "serde",
