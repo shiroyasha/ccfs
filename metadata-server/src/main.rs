@@ -6,7 +6,7 @@ use actix_web::web::scope;
 use actix_web::{App, HttpServer};
 use ccfs_commons::data::Data;
 use ccfs_commons::{errors::Error as BaseError, result::CCFSResult};
-use ccfs_commons::{Chunk, ChunkServer, File, FileMetadata};
+use ccfs_commons::{Chunk, ChunkServer, FileMetadata};
 use errors::*;
 use jobs::{replication, snapshot};
 use routes::{
@@ -24,7 +24,7 @@ use uuid::Uuid;
 
 pub type ChunkServersMap = Arc<RwLock<HashMap<Uuid, ChunkServer>>>;
 pub type ChunksMap = Arc<RwLock<HashMap<Uuid, HashSet<Chunk>>>>;
-pub type FilesMap = Arc<RwLock<HashMap<Uuid, File>>>;
+pub type FilesMap = Arc<RwLock<HashMap<Uuid, (String, FileMetadata)>>>;
 pub type FileMetadataTree = Arc<RwLock<FileMetadata>>;
 
 const HOST: &str = "HOST";
@@ -70,7 +70,7 @@ async fn main() -> std::io::Result<()> {
         file_metadata_tree.inner.clone(),
     ));
     task::spawn_local(replication::start_replication_job(
-        files.inner.clone(),
+        file_metadata_tree.inner.clone(),
         chunks.inner.clone(),
         chunk_servers.inner.clone(),
     ));

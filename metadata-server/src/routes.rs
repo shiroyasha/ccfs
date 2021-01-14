@@ -55,7 +55,6 @@ pub async fn create_file(
 ) -> CCFSResult<HttpResponse> {
     let file = file_info.into_inner();
     let path = params.get("path").ok_or_else(|| MissingParam.build())?;
-    let mut files_map = files.write().map_err(|_| WriteLock.build())?;
     let mut tree = file_metadata_tree.write().map_err(|_| WriteLock.build())?;
     let (dir_path, _) = path.split_at(path.rfind('/').unwrap_or(0));
     let target = tree.traverse_mut(&dir_path).map_err(|_| NotFound.build())?;
@@ -64,8 +63,8 @@ pub async fn create_file(
             target.children.insert(name.clone(), file.clone());
         }
         FileInfo::File(f) => {
-            target.children.insert(f.name.clone(), file.clone());
-            files_map.insert(f.id, f.clone());
+            let mut files_map = files.write().map_err(|_| WriteLock.build())?;
+            files_map.insert(f.id, (dir_path.into(), file.clone()));
         }
     }
     Ok(HttpResponse::Ok().json(file))
@@ -90,23 +89,30 @@ pub async fn get_file(
 #[post("/chunk/completed")]
 pub async fn signal_chuck_upload_completed(
     chunk: web::Json<Chunk>,
+    file_metadata_tree: web::Data<Data<FileMetadataTree>>,
     files: web::Data<Data<FilesMap>>,
     chunks: web::Data<Data<ChunksMap>>,
 ) -> CCFSResult<HttpResponse> {
     let mut chunks = chunks.write().map_err(|_| WriteLock.build())?;
     let mut files = files.write().map_err(|_| WriteLock.build())?;
-    let file = files
+    let (path, file) = files
         .get_mut(&chunk.file_id)
         .ok_or_else(|| NotFound.build())?;
-    chunks
-        .entry(chunk.id)
-        .or_insert_with(HashSet::new)
-        .insert(*chunk);
-
-    file.num_of_completed_chunks += 1;
-    if file.num_of_completed_chunks == file.chunks.len() {
-        file.status = FileStatus::Completed;
+    let chunk_set = chunks.entry(chunk.id).or_insert_with(HashSet::new);
+    if chunk_set.is_empty() {
+        if let FileInfo::File(ref mut file_info) = file.file_info {
+            file_info.num_of_completed_chunks += 1;
+            if file_info.num_of_completed_chunks == file_info.chunks.len() {
+                file_info.status = FileStatus::Completed;
+                let mut tree = file_metadata_tree.write().map_err(|_| WriteLock.build())?;
+                let target_dir = tree.traverse_mut(path).map_err(|_| NotFound.build())?;
+                target_dir
+                    .children
+                    .insert(file_info.name.clone(), file.clone());
+            }
+        }
     }
+    chunk_set.insert(*chunk);
     Ok(HttpResponse::Ok().finish())
 }
 
