@@ -1,12 +1,17 @@
 use crate::errors::*;
 use crate::{MetadataUrl, ServerID, UploadsDir};
 use actix_multipart::Multipart;
+use actix_web::body::BodyStream;
+use actix_web::http::header::CONTENT_TYPE;
+use actix_web::HttpRequest;
 use actix_web::{client::Client, get, post, web, HttpResponse};
-use ccfs_commons::http_utils::{handle_file, handle_string, read_body};
+use ccfs_commons::chunk_name;
+use ccfs_commons::http_utils::{get_header, handle_file, handle_string, read_body};
 use ccfs_commons::{data::Data, Chunk};
 use ccfs_commons::{errors::Error as BaseError, result::CCFSResult};
 use fs::{create_dir_all, rename};
 use futures::TryStreamExt;
+use mpart_async::client::MultipartRequest;
 use std::collections::HashMap;
 use std::str::FromStr;
 use tokio::fs::{self, File};
@@ -102,4 +107,41 @@ pub async fn download(
         .await
         .map_err(|source| BaseError::Read { path, source })?;
     Ok(HttpResponse::Ok().streaming(reader_stream(file)))
+}
+
+#[post("/replicate")]
+pub async fn replicate(
+    request: HttpRequest,
+    dir: web::Data<Data<UploadsDir>>,
+) -> CCFSResult<HttpResponse> {
+    let headers = request.headers();
+    let chunk_id = get_header(headers, "x-ccfs-chunk-id").ok_or_else(|| MissingHeader.build())?;
+    let file_id = get_header(headers, "x-ccfs-file-id").ok_or_else(|| MissingHeader.build())?;
+    let server_url =
+        get_header(headers, "x-ccfs-server-url").ok_or_else(|| MissingHeader.build())?;
+    let chunk_file_name = chunk_name(file_id, chunk_id);
+    let path = dir.join(&chunk_file_name);
+    let f = File::open(&path)
+        .await
+        .map_err(|source| BaseError::Open { path, source })?;
+    let stream = reader_stream(f);
+    let mut mpart = MultipartRequest::default();
+    mpart.add_field("chunk_id", &chunk_id);
+    mpart.add_field("file_id", &file_id);
+    mpart.add_stream("file", &chunk_file_name, "application/octet-stream", stream);
+    let url = format!("{}/api/upload", server_url);
+    let resp = Client::new()
+        .post(&url)
+        .header(
+            CONTENT_TYPE,
+            format!("multipart/form-data; boundary={}", &mpart.get_boundary()),
+        )
+        .send_body(BodyStream::new(Box::new(mpart)))
+        .await
+        .map_err(|source| BaseError::FailedRequest { url, source })?;
+    if !resp.status().is_success() {
+        let response = read_body(resp).await?;
+        return Err(BaseError::Unsuccessful { response }.into());
+    }
+    Ok(HttpResponse::Ok().body("Successfully replicated chunk!"))
 }

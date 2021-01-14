@@ -14,6 +14,9 @@ pub enum Error {
 
     #[snafu(display("Missing some form parts"))]
     MissingPart,
+
+    #[snafu(display("Missing some headers"))]
+    MissingHeader,
 }
 
 impl ResponseError for Error {
@@ -23,7 +26,7 @@ impl ResponseError for Error {
         match self {
             Base { source } => source.error_response(),
             MetaServerCommunication { .. } => ErrorInternalServerError(display).into(),
-            MissingPart => ErrorBadRequest(display).into(),
+            MissingPart | MissingHeader => ErrorBadRequest(display).into(),
         }
     }
 }

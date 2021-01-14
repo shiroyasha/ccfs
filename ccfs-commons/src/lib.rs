@@ -7,7 +7,7 @@ use actix_web::dev::Payload;
 use actix_web::error::ErrorBadRequest;
 use actix_web::{Error as ReqError, FromRequest, HttpRequest};
 use chrono::serde::ts_milliseconds;
-use chrono::{DateTime, Utc};
+use chrono::{DateTime, Duration, Utc};
 use futures_util::future::{err, ok, Ready};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
@@ -32,6 +32,10 @@ impl ChunkServer {
             latest_ping_time: Utc::now(),
         }
     }
+
+    pub fn is_active(&self) -> bool {
+        self.latest_ping_time.signed_duration_since(Utc::now()) <= Duration::seconds(6)
+    }
 }
 
 #[derive(Debug)]
@@ -48,8 +52,8 @@ impl FromRequest for ChunkServer {
     fn from_request(request: &HttpRequest, _payload: &mut Payload) -> Self::Future {
         let headers = request.headers();
         match (
-            headers.get("x-chunk-server-id"),
-            headers.get("x-chunk-server-address"),
+            headers.get("x-ccfs-chunk-server-id"),
+            headers.get("x-ccfs-chunk-server-address"),
         ) {
             (Some(id_header), Some(address_header)) => {
                 match (id_header.to_str(), address_header.to_str()) {
@@ -225,7 +229,7 @@ impl File {
     }
 }
 
-#[derive(Serialize, Deserialize, Clone, Copy, Debug)]
+#[derive(Serialize, Deserialize, Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct Chunk {
     pub id: Uuid,
     pub file_id: Uuid,
@@ -241,8 +245,12 @@ impl Chunk {
     }
 
     pub fn chunk_name(&self) -> String {
-        format!("{}_{}", self.file_id, self.id)
+        chunk_name(&self.file_id.to_string(), &self.id.to_string())
     }
+}
+
+pub fn chunk_name(file_id: &str, chunk_id: &str) -> String {
+    format!("{}_{}", file_id, chunk_id)
 }
 
 #[cfg(test)]

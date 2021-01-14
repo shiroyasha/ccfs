@@ -3,6 +3,7 @@ use crate::result::CCFSResult;
 use actix_multipart::Field;
 use actix_web::client::ClientResponse;
 use actix_web::dev::{Decompress, Payload};
+use actix_web::http::HeaderMap;
 use futures_util::StreamExt;
 use snafu::ResultExt;
 use tokio::fs::File;
@@ -32,4 +33,8 @@ pub async fn handle_file(mut data: Field, path: &str) -> CCFSResult<()> {
         f.write_all(&bytes).await.context(Write { path })?;
     }
     Ok(())
+}
+
+pub fn get_header<'a>(headers: &'a HeaderMap, key: &'a str) -> Option<&'a str> {
+    headers.get(key)?.to_str().ok()
 }

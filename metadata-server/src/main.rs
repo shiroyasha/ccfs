@@ -1,6 +1,6 @@
 mod errors;
+mod jobs;
 mod routes;
-mod snapshot;
 
 use actix_web::web::scope;
 use actix_web::{App, HttpServer};
@@ -8,12 +8,13 @@ use ccfs_commons::data::Data;
 use ccfs_commons::{errors::Error as BaseError, result::CCFSResult};
 use ccfs_commons::{Chunk, ChunkServer, File, FileMetadata};
 use errors::*;
+use jobs::{replication, snapshot};
 use routes::{
     chunk_server_ping, create_file, get_chunks, get_file, get_server, get_servers,
     signal_chuck_upload_completed,
 };
 use snafu::ResultExt;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::env;
 use std::fs::File as FileFS;
 use std::path::Path;
@@ -22,7 +23,7 @@ use tokio::task;
 use uuid::Uuid;
 
 pub type ChunkServersMap = Arc<RwLock<HashMap<Uuid, ChunkServer>>>;
-pub type ChunksMap = Arc<RwLock<HashMap<Uuid, Chunk>>>;
+pub type ChunksMap = Arc<RwLock<HashMap<Uuid, HashSet<Chunk>>>>;
 pub type FilesMap = Arc<RwLock<HashMap<Uuid, File>>>;
 pub type FileMetadataTree = Arc<RwLock<FileMetadata>>;
 
@@ -68,6 +69,12 @@ async fn main() -> std::io::Result<()> {
         snapshot_path,
         file_metadata_tree.inner.clone(),
     ));
+    task::spawn_local(replication::start_replication_job(
+        files.inner.clone(),
+        chunks.inner.clone(),
+        chunk_servers.inner.clone(),
+    ));
+
     HttpServer::new(move || {
         App::new()
             .data(chunk_servers.clone())
