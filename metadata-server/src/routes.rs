@@ -59,8 +59,11 @@ pub async fn create_file(
     let (dir_path, _) = path.split_at(path.rfind('/').unwrap_or(0));
     let target = tree.traverse_mut(&dir_path).map_err(|_| NotFound.build())?;
     match &file.file_info {
-        FileInfo::Directory(name) => {
-            target.children.insert(name.clone(), file.clone());
+        FileInfo::Directory { .. } => {
+            target
+                .children_mut()
+                .unwrap()
+                .insert(file.name.clone(), file.clone());
         }
         FileInfo::File(f) => {
             let mut files_map = files.write().map_err(|_| WriteLock.build())?;
@@ -107,8 +110,9 @@ pub async fn signal_chuck_upload_completed(
                 let mut tree = file_metadata_tree.write().map_err(|_| WriteLock.build())?;
                 let target_dir = tree.traverse_mut(path).map_err(|_| NotFound.build())?;
                 target_dir
-                    .children
-                    .insert(file_info.name.clone(), file.clone());
+                    .children_mut()
+                    .unwrap()
+                    .insert(file.name.clone(), file.clone());
             }
         }
     }

@@ -126,8 +126,8 @@ async fn send_replication_requests(
 fn get_files(tree: &FileMetadata) -> Vec<&File> {
     let mut res = Vec::new();
     match &tree.file_info {
-        FileInfo::Directory(_) => {
-            for child in tree.children.values() {
+        FileInfo::Directory { ref children } => {
+            for child in children.values() {
                 res.append(&mut get_files(&child));
             }
         }

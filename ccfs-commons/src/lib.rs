@@ -81,10 +81,10 @@ impl Default for FileStatus {
     }
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
 pub struct FileMetadata {
+    pub name: String,
     pub file_info: FileInfo,
-    pub children: BTreeMap<String, FileMetadata>,
     pub version: usize,
     #[serde(with = "ts_milliseconds")]
     pub created_at: DateTime<Utc>,
@@ -100,8 +100,10 @@ impl FileMetadata {
     pub fn create_dir(name: String) -> Self {
         let now = Utc::now();
         Self {
-            file_info: FileInfo::Directory(name),
-            children: BTreeMap::new(),
+            name,
+            file_info: FileInfo::Directory {
+                children: Default::default(),
+            },
             version: 1,
             created_at: now,
             modified_at: now,
@@ -111,11 +113,25 @@ impl FileMetadata {
     pub fn create_file(name: String, size: u64, chunks: Vec<Uuid>) -> Self {
         let now = Utc::now();
         Self {
-            file_info: FileInfo::File(File::new(name, size, chunks)),
-            children: BTreeMap::new(),
+            name,
+            file_info: FileInfo::File(File::new(size, chunks)),
             version: 1,
             created_at: now,
             modified_at: now,
+        }
+    }
+
+    pub fn children(&self) -> Result<&BTreeMap<String, FileMetadata>, Box<dyn Error>> {
+        match self.file_info {
+            FileInfo::Directory { ref children } => Ok(children),
+            _ => Err("not a dir".into()),
+        }
+    }
+
+    pub fn children_mut(&mut self) -> Result<&mut BTreeMap<String, FileMetadata>, Box<dyn Error>> {
+        match self.file_info {
+            FileInfo::Directory { ref mut children } => Ok(children),
+            _ => Err("not a dir".into()),
         }
     }
 
@@ -123,9 +139,14 @@ impl FileMetadata {
         let mut curr = self;
         if !path.is_empty() {
             for segment in path.split_terminator('/') {
-                match curr.children.get(segment) {
-                    Some(next) => curr = next,
-                    None => return Err(format!("path {} doesn't exist", path).into()),
+                match curr.file_info {
+                    FileInfo::File(_) => return Err(format!("path {} doesn't exist", path).into()),
+                    _ => {
+                        curr = curr
+                            .children()?
+                            .get(segment)
+                            .ok_or(format!("path {} doesn't exist", path))?
+                    }
                 }
             }
         }
@@ -136,58 +157,63 @@ impl FileMetadata {
         let mut curr = self;
         if !path.is_empty() {
             for segment in path.split_terminator('/') {
-                match curr.children.get_mut(segment) {
-                    Some(next) => curr = next,
-                    None => return Err(format!("path {} doesn't exist", path).into()),
+                match curr.file_info {
+                    FileInfo::File(_) => return Err(format!("path {} doesn't exist", path).into()),
+                    _ => {
+                        curr = curr
+                            .children_mut()?
+                            .get_mut(segment)
+                            .ok_or(format!("path {} doesn't exist", path))?
+                    }
                 }
             }
         }
         Ok(curr)
     }
 
-    pub fn insert_dir(&mut self, name: &str) {
-        self.children
+    pub fn insert_dir(&mut self, name: &str) -> Result<(), Box<dyn Error>> {
+        self.children_mut()?
             .insert(name.into(), Self::create_dir(name.into()));
+        Ok(())
     }
 
-    pub fn insert_file(&mut self, name: &str, size: u64, chunks: Vec<Uuid>) {
-        self.children
+    pub fn insert_file(
+        &mut self,
+        name: &str,
+        size: u64,
+        chunks: Vec<Uuid>,
+    ) -> Result<(), Box<dyn Error>> {
+        self.children_mut()?
             .insert(name.into(), Self::create_file(name.into(), size, chunks));
+        Ok(())
     }
 
     pub fn print_subtree(&self) -> String {
-        match &self.file_info {
-            FileInfo::File(file) => file.name.to_string(),
-            FileInfo::Directory(name) => {
-                let mut iter = self.children.values().peekable();
-                let mut s = name.to_string();
-                while let Some(child) = iter.next() {
-                    let prefix = if iter.peek().is_some() { "├" } else { "└" };
-                    let subdir_prefix = if iter.peek().is_some() { "│" } else { " " };
-                    let subtree = child.print_subtree();
-                    let mut lines_iter = subtree.lines();
-                    s.push_str(&format!("\n{:─<2} {}", prefix, lines_iter.next().unwrap()));
-                    for l in lines_iter {
-                        s.push_str(&format!("\n{:<2} {}", subdir_prefix, l));
-                    }
+        let mut s = self.name.to_string();
+        if let FileInfo::Directory { children } = &self.file_info {
+            let mut iter = children.values().peekable();
+            while let Some(child) = iter.next() {
+                let prefix = if iter.peek().is_some() { "├" } else { "└" };
+                let subdir_prefix = if iter.peek().is_some() { "│" } else { " " };
+                let subtree = child.print_subtree();
+                let mut lines_iter = subtree.lines();
+                s.push_str(&format!("\n{:─<2} {}", prefix, lines_iter.next().unwrap()));
+                for l in lines_iter {
+                    s.push_str(&format!("\n{:<2} {}", subdir_prefix, l));
                 }
-                s
             }
         }
+        s
     }
 
     pub fn print_current_dir(&self) -> String {
-        match &self.file_info {
-            FileInfo::Directory(_name) => {
-                let mut iter = self.children.values().peekable();
-                let mut s = String::new();
+        let mut s = String::new();
+        match &self.children() {
+            Ok(children) => {
+                let mut iter = children.values().peekable();
                 while let Some(child) = iter.next() {
                     let has_next = iter.peek().is_some();
-                    let child_name = match &child.file_info {
-                        FileInfo::Directory(name) => &name,
-                        FileInfo::File(file) => &file.name,
-                    };
-                    s.push_str(&child_name);
+                    s.push_str(&child.name);
                     if has_next {
                         s.push('\n');
                     }
@@ -201,14 +227,15 @@ impl FileMetadata {
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
 pub enum FileInfo {
-    Directory(String),
+    Directory {
+        children: BTreeMap<String, FileMetadata>,
+    },
     File(File),
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
 pub struct File {
     pub id: Uuid,
-    pub name: String,
     pub size: u64,
     pub chunks: Vec<Uuid>,
     #[serde(default)]
@@ -217,10 +244,9 @@ pub struct File {
     pub status: FileStatus,
 }
 impl File {
-    pub fn new(name: String, size: u64, chunks: Vec<Uuid>) -> Self {
+    pub fn new(size: u64, chunks: Vec<Uuid>) -> Self {
         Self {
             id: Uuid::new_v4(),
-            name,
             size,
             chunks,
             num_of_completed_chunks: 0,
@@ -260,25 +286,29 @@ mod tests {
     #[test]
     fn trie_insert_test() -> Result<(), Box<dyn Error>> {
         let mut trie = FileMetadata::create_root();
-        trie.insert_dir("dir1");
-        assert_eq!(trie.children.len(), 1);
+        trie.insert_dir("dir1")?;
+        assert_eq!(trie.children()?.len(), 1);
         assert_eq!(
-            trie.children.get("dir1").ok_or("missing dir1")?.file_info,
-            FileInfo::Directory("dir1".into())
+            trie.children()?.get("dir1").ok_or("missing dir1")?.name,
+            "dir1"
         );
-        trie.insert_dir("dir2");
-        assert_eq!(trie.children.len(), 2);
+        trie.insert_dir("dir2")?;
+
+        assert_eq!(trie.children()?.len(), 2);
         assert_eq!(
-            trie.children.get("dir2").ok_or("missing dir2")?.file_info,
-            FileInfo::Directory("dir2".into())
+            trie.children()?.get("dir2").ok_or("missing dir2")?.name,
+            "dir2"
         );
         trie.insert_file(
             "some.zip",
             20,
             vec![Uuid::from_str("ec73d743-050b-4f52-992a-d1102340d739")?],
-        );
-        assert_eq!(trie.children.len(), 3);
-        let file = &trie.children.get("some.zip").ok_or("some.zip not found")?;
+        )?;
+        assert_eq!(trie.children()?.len(), 3);
+        let file = &trie
+            .children()?
+            .get("some.zip")
+            .ok_or("some.zip not found")?;
         match &file.file_info {
             FileInfo::File(f) => {
                 assert_eq!(f.size, 20);
@@ -291,16 +321,16 @@ mod tests {
     #[test]
     fn trie_traverse_test() -> Result<(), Box<dyn Error>> {
         let mut trie = FileMetadata::create_root();
-        trie.insert_dir("dir1");
-        trie.insert_dir("dir2");
+        trie.insert_dir("dir1")?;
+        trie.insert_dir("dir2")?;
         trie.insert_file(
             "some.zip",
             20,
             vec![Uuid::from_str("ec73d743-050b-4f52-992a-d1102340d739")?],
-        );
+        )?;
         let dir1 = trie.traverse("dir1")?;
         match &dir1.file_info {
-            FileInfo::Directory(name) => assert_eq!(name, "dir1"),
+            FileInfo::Directory { .. } => assert_eq!(dir1.name, "dir1"),
             _ => return Err("not a dir".into()),
         }
         match dir1.traverse("subdir") {
@@ -317,12 +347,12 @@ mod tests {
         }
         let dir2 = trie.traverse("dir2")?;
         match &dir2.file_info {
-            FileInfo::Directory(name) => assert_eq!(name, "dir2"),
+            FileInfo::Directory { .. } => assert_eq!(dir2.name, "dir2"),
             _ => return Err("not a dir".into()),
         }
         let file = trie.traverse("some.zip")?;
         match &file.file_info {
-            FileInfo::File(file) => assert_eq!(file.name, "some.zip"),
+            FileInfo::File(_file) => assert_eq!(file.name, "some.zip"),
             _ => return Err("not a file".into()),
         }
 
@@ -330,33 +360,33 @@ mod tests {
     }
 
     fn add_dir2(trie: &mut FileMetadata) -> Result<(), Box<dyn Error>> {
-        trie.insert_dir("dir2");
+        trie.insert_dir("dir2")?;
         let dir2 = trie.traverse_mut("dir2")?;
         dir2.insert_file(
             "test.txt",
             10,
             vec![Uuid::from_str("1a6e7006-12a7-4935-b8c0-58fa7ea84b09")?],
-        );
-        dir2.insert_dir("subdir");
+        )?;
+        dir2.insert_dir("subdir")?;
         let subdir = dir2.traverse_mut("subdir")?;
-        subdir.insert_dir("tmp");
+        subdir.insert_dir("tmp")?;
         subdir.insert_file(
             "file",
             100,
             vec![Uuid::from_str("6d53a85f-505b-4a1a-ae6d-f7c18761d04a")?],
-        );
+        )?;
         Ok(())
     }
 
     fn build() -> Result<FileMetadata, Box<dyn Error>> {
         let mut trie = FileMetadata::create_root();
-        trie.insert_dir("dir1");
+        trie.insert_dir("dir1")?;
         add_dir2(&mut trie)?;
         trie.insert_file(
             "some.zip",
             0,
             vec![Uuid::from_str("ec73d743-050b-4f52-992a-d1102340d739")?],
-        );
+        )?;
 
         Ok(trie)
     }
