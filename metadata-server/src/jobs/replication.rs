@@ -31,9 +31,6 @@ fn replicate_chunks(
         let files = files_map.read().map_err(|_| ReadLock.build())?.clone();
         let chunks = chunks_map.read().map_err(|_| ReadLock.build())?.clone();
         let servers = servers_map.read().map_err(|_| ReadLock.build())?.clone();
-        println!("files {:?}", files);
-        println!("chunks {:?}", chunks);
-        println!("servers {:?}", servers);
 
         let active_files = files.values().filter(|f| f.status == FileStatus::Completed);
         let active_servers = servers
@@ -51,6 +48,13 @@ fn replicate_chunks(
                         .filter(|c| active_servers.contains(&c.server_id))
                         .map(|c| &c.server_id)
                         .collect::<HashSet<_>>();
+                    if active_replicas.is_empty() {
+                        continue;
+                    }
+                    let from_server = &servers
+                        .get(active_replicas.iter().next().unwrap())
+                        .unwrap()
+                        .address;
                     if active_replicas.len() < required_replicas {
                         let mut remaining = required_replicas - active_replicas.len();
                         let server_candidates = &active_servers - &active_replicas;
@@ -59,19 +63,18 @@ fn replicate_chunks(
                             while remaining > 0 && iter.peek().is_some() {
                                 let requests = (0..remaining).filter_map(|_| {
                                     let s_id = iter.next()?;
-                                    let server = servers.get(s_id)?;
+                                    let target_server = &servers.get(s_id)?.address;
                                     Some(
-                                        c.post(format!("{}/replicate", &server.address))
-                                            .header("x-ccfs-chunk-id", "")
-                                            .header("x-ccfs-chunk-file-id", "")
-                                            .header("x-ccfs-chunk-server-url", "")
+                                        c.post(format!("{}/api/replicate", &from_server))
+                                            .header("x-ccfs-chunk-id", chunk.to_string())
+                                            .header("x-ccfs-file-id", f.id.to_string())
+                                            .header("x-ccfs-server-url", target_server.clone())
                                             .send(),
                                     )
                                 });
-                                let success_responses = join_all(requests)
-                                    .await
-                                    .into_iter()
-                                    .filter_map(|resp| match resp {
+                                let responses = join_all(requests).await;
+                                let success_responses =
+                                    responses.into_iter().filter_map(|resp| match resp {
                                         Ok(r) if r.status().is_success() => Some(r),
                                         _ => None,
                                     });

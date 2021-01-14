@@ -4,7 +4,7 @@ mod routes;
 
 use actix_web::{web, App, HttpServer};
 use ccfs_commons::data::Data;
-use routes::{download, upload};
+use routes::{download, replicate, upload};
 use std::env;
 use std::path::PathBuf;
 use std::str::FromStr;
@@ -66,7 +66,12 @@ async fn main() -> std::io::Result<()> {
             .data(meta_url_state.clone())
             .data(id_state.clone())
             .data(upload_path_state.clone())
-            .service(web::scope("/api").service(upload).service(download))
+            .service(
+                web::scope("/api")
+                    .service(upload)
+                    .service(download)
+                    .service(replicate),
+            )
     })
     .bind(&addr)?
     .run()

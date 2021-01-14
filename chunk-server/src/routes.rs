@@ -5,6 +5,7 @@ use actix_web::body::BodyStream;
 use actix_web::http::header::CONTENT_TYPE;
 use actix_web::HttpRequest;
 use actix_web::{client::Client, get, post, web, HttpResponse};
+use ccfs_commons::chunk_name;
 use ccfs_commons::http_utils::{get_header, handle_file, handle_string, read_body};
 use ccfs_commons::{data::Data, Chunk};
 use ccfs_commons::{errors::Error as BaseError, result::CCFSResult};
@@ -115,11 +116,10 @@ pub async fn replicate(
 ) -> CCFSResult<HttpResponse> {
     let headers = request.headers();
     let chunk_id = get_header(headers, "x-ccfs-chunk-id").ok_or_else(|| MissingHeader.build())?;
-    let file_id =
-        get_header(headers, "x-ccfs-chunk-file-id").ok_or_else(|| MissingHeader.build())?;
+    let file_id = get_header(headers, "x-ccfs-file-id").ok_or_else(|| MissingHeader.build())?;
     let server_url =
-        get_header(headers, "x-ccfs-chunk-server-url").ok_or_else(|| MissingHeader.build())?;
-    let chunk_file_name = format!("{}_{}", chunk_id, file_id);
+        get_header(headers, "x-ccfs-server-url").ok_or_else(|| MissingHeader.build())?;
+    let chunk_file_name = chunk_name(file_id, chunk_id);
     let path = dir.join(&chunk_file_name);
     let f = File::open(&path)
         .await

@@ -245,8 +245,12 @@ impl Chunk {
     }
 
     pub fn chunk_name(&self) -> String {
-        format!("{}_{}", self.file_id, self.id)
+        chunk_name(&self.file_id.to_string(), &self.id.to_string())
     }
+}
+
+pub fn chunk_name(file_id: &str, chunk_id: &str) -> String {
+    format!("{}_{}", file_id, chunk_id)
 }
 
 #[cfg(test)]
