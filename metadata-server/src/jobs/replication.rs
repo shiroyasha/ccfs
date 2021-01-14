@@ -1,17 +1,21 @@
-use crate::errors::*;
-use crate::{ChunkServersMap, ChunksMap, FilesMap};
+use crate::{errors::*, FileMetadataTree};
+use crate::{ChunkServersMap, ChunksMap};
 use actix_web::client::Client;
 use ccfs_commons::result::CCFSResult;
-use ccfs_commons::{Chunk, ChunkServer, File, FileStatus};
+use ccfs_commons::{Chunk, ChunkServer, File, FileInfo, FileMetadata};
 use futures::future::{join_all, FutureExt, LocalBoxFuture};
 use std::collections::{HashMap, HashSet};
 use tokio::time::{delay_for, Duration};
 use uuid::Uuid;
 
-pub async fn start_replication_job(files: FilesMap, chunks: ChunksMap, servers: ChunkServersMap) {
+pub async fn start_replication_job(
+    tree: FileMetadataTree,
+    chunks: ChunksMap,
+    servers: ChunkServersMap,
+) {
     loop {
         delay_for(Duration::from_secs(20)).await;
-        if let Err(err) = replicate_files(files.clone(), chunks.clone(), servers.clone(), 3).await {
+        if let Err(err) = replicate_files(tree.clone(), chunks.clone(), servers.clone(), 3).await {
             // TODO: replace with logger
             println!("Error while creating replicas: {:?}", err);
         } else {
@@ -21,18 +25,17 @@ pub async fn start_replication_job(files: FilesMap, chunks: ChunksMap, servers: 
 }
 
 fn replicate_files(
-    files_map: FilesMap,
+    tree: FileMetadataTree,
     chunks_map: ChunksMap,
     servers_map: ChunkServersMap,
     required_replicas: usize,
 ) -> LocalBoxFuture<'static, CCFSResult<()>> {
     let c = Client::new();
     async move {
-        let files = files_map.read().map_err(|_| ReadLock.build())?.clone();
+        let files_tree = tree.read().map_err(|_| ReadLock.build())?.clone();
         let chunks = chunks_map.read().map_err(|_| ReadLock.build())?.clone();
         let servers = servers_map.read().map_err(|_| ReadLock.build())?.clone();
 
-        let active_files = files.values().filter(|f| f.status == FileStatus::Completed);
         let active_servers = servers
             .iter()
             .filter_map(|(id, s)| match s.is_active() {
@@ -40,7 +43,9 @@ fn replicate_files(
                 false => None,
             })
             .collect::<HashSet<_>>();
-        let futures = active_files
+        let files = get_files(&files_tree);
+        let futures = files
+            .iter()
             .map(|f| replicate_file(&c, f, &chunks, &active_servers, &servers, required_replicas));
         join_all(futures).await;
         Ok(())
@@ -116,4 +121,17 @@ async fn send_replication_requests(
         remaining -= success_responses.count();
     }
     Ok(())
+}
+
+fn get_files(tree: &FileMetadata) -> Vec<&File> {
+    let mut res = Vec::new();
+    match &tree.file_info {
+        FileInfo::Directory(_) => {
+            for child in tree.children.values() {
+                res.append(&mut get_files(&child));
+            }
+        }
+        FileInfo::File(file_info) => res.push(&file_info),
+    }
+    res
 }
