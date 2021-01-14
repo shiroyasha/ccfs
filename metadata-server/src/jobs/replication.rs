@@ -2,7 +2,7 @@ use crate::{errors::*, FileMetadataTree};
 use crate::{ChunkServersMap, ChunksMap};
 use actix_web::client::Client;
 use ccfs_commons::result::CCFSResult;
-use ccfs_commons::{Chunk, ChunkServer, File, FileInfo, FileMetadata};
+use ccfs_commons::{Chunk, ChunkServer, FileInfo, FileMetadata};
 use futures::future::{join_all, FutureExt, LocalBoxFuture};
 use std::collections::{HashMap, HashSet};
 use tokio::time::{delay_for, Duration};
@@ -55,32 +55,39 @@ fn replicate_files(
 
 async fn replicate_file(
     c: &Client,
-    file: &File,
+    file: &FileMetadata,
     chunks: &HashMap<Uuid, HashSet<Chunk>>,
     active_servers: &HashSet<&Uuid>,
     servers: &HashMap<Uuid, ChunkServer>,
     required_replicas: usize,
 ) -> CCFSResult<()> {
-    for chunk in file.chunks.iter() {
-        if let Some(replicas) = chunks.get(chunk) {
-            let replica_servers = replicas
-                .iter()
-                .filter(|c| active_servers.contains(&c.server_id))
-                .map(|c| &c.server_id)
-                .collect::<HashSet<_>>();
-            if !replica_servers.is_empty() && replica_servers.len() < required_replicas {
-                let target_server_candidates = active_servers - &replica_servers;
-                if !target_server_candidates.is_empty() {
-                    send_replication_requests(
-                        c,
-                        servers,
-                        &replica_servers,
-                        &target_server_candidates,
-                        &file.id,
-                        chunk,
-                        required_replicas,
-                    )
-                    .await?;
+    if let FileInfo::File {
+        chunks: ref file_chunks,
+        id,
+        ..
+    } = &file.file_info
+    {
+        for chunk in file_chunks.iter() {
+            if let Some(replicas) = chunks.get(chunk) {
+                let replica_servers = replicas
+                    .iter()
+                    .filter(|c| active_servers.contains(&c.server_id))
+                    .map(|c| &c.server_id)
+                    .collect::<HashSet<_>>();
+                if !replica_servers.is_empty() && replica_servers.len() < required_replicas {
+                    let target_server_candidates = active_servers - &replica_servers;
+                    if !target_server_candidates.is_empty() {
+                        send_replication_requests(
+                            c,
+                            servers,
+                            &replica_servers,
+                            &target_server_candidates,
+                            &id,
+                            chunk,
+                            required_replicas,
+                        )
+                        .await?;
+                    }
                 }
             }
         }
@@ -123,15 +130,15 @@ async fn send_replication_requests(
     Ok(())
 }
 
-fn get_files(tree: &FileMetadata) -> Vec<&File> {
+fn get_files(tree: &FileMetadata) -> Vec<&FileMetadata> {
     let mut res = Vec::new();
     match &tree.file_info {
-        FileInfo::Directory(_) => {
-            for child in tree.children.values() {
+        FileInfo::Directory { ref children } => {
+            for child in children.values() {
                 res.append(&mut get_files(&child));
             }
         }
-        FileInfo::File(file_info) => res.push(&file_info),
+        _ => res.push(&tree),
     }
     res
 }

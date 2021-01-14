@@ -5,7 +5,7 @@ use actix_web::dev::{Decompress, Payload};
 use actix_web::http::header::CONTENT_TYPE;
 use ccfs_commons::http_utils::read_body;
 use ccfs_commons::{errors::Error as BaseError, result::CCFSResult};
-use ccfs_commons::{Chunk, ChunkServer, File, FileInfo, FileMetadata, CHUNK_SIZE};
+use ccfs_commons::{Chunk, ChunkServer, FileInfo, FileMetadata, CHUNK_SIZE};
 use futures::future::join_all;
 use mpart_async::client::MultipartRequest;
 use rand::{seq::SliceRandom, thread_rng};
@@ -79,8 +79,8 @@ pub async fn upload_item(c: &Client, meta_url: &str, path: &Path, prefix: &Path)
         .json()
         .await
         .context(ParseJson)?;
-    if let FileInfo::File(file_info) = &file.file_info {
-        upload_file(c, meta_url, &file_info.id, chunks, path).await?;
+    if let FileInfo::File { id, .. } = &file.file_info {
+        upload_file(c, meta_url, id, chunks, path).await?;
     }
     return Ok(());
 }
@@ -169,25 +169,17 @@ pub async fn download<T: AsRef<Path>>(
     let mut items = vec![(file, path)];
     while !items.is_empty() {
         let (curr_f, curr_path) = items.pop().unwrap();
-        match curr_f.file_info {
-            FileInfo::Directory(name) => {
-                let new_path = curr_path.join(name);
-                create_dir(&new_path)
-                    .await
-                    .map_err(|source| BaseError::Create {
-                        path: new_path.clone(),
-                        source,
-                    })?;
-                items.extend(
-                    &mut curr_f
-                        .children
-                        .into_iter()
-                        .map(|(_, f)| (f, new_path.clone())),
-                );
-            }
-            FileInfo::File(f) => {
-                download_file(c, meta_url, f, &curr_path).await?;
-            }
+        if let FileInfo::Directory { children } = curr_f.file_info {
+            let new_path = curr_path.join(curr_f.name);
+            create_dir(&new_path)
+                .await
+                .map_err(|source| BaseError::Create {
+                    path: new_path.clone(),
+                    source,
+                })?;
+            items.extend(children.into_iter().map(|(_, f)| (f, new_path.clone())));
+        } else {
+            download_file(c, meta_url, &curr_f, &curr_path).await?;
         }
     }
     Ok(())
@@ -196,41 +188,43 @@ pub async fn download<T: AsRef<Path>>(
 pub async fn download_file(
     c: &Client,
     meta_url: &str,
-    file_info: File,
+    file: &FileMetadata,
     target_dir: &Path,
 ) -> CCFSResult<()> {
-    let chunks_url = format!("{}/api/chunks/file/{}", meta_url, &file_info.id);
-    let target_path = target_dir.join(&file_info.name);
-    let path = target_path.as_path();
-    let groups: Vec<Vec<Chunk>> = get_request_json(c, &chunks_url).await?;
-    let mut file = FileFS::create(path)
-        .await
-        .map_err(|source| BaseError::Create {
-            path: path.into(),
-            source,
-        })?;
-    let requests = groups
-        .iter()
-        .map(|group| download_chunk(c, group, meta_url))
-        .collect::<Vec<_>>();
-    let expected_responses_count = requests.len();
-    let mut responses: HashMap<Uuid, Response> = join_all(requests)
-        .await
-        .into_iter()
-        .filter_map(|resp| resp.ok())
-        .collect();
-    if responses.len() < expected_responses_count {
-        return Err(SomeChunksNotAvailable.build().into());
-    }
-    for curr_chunk_id in &file_info.chunks {
-        let mut payload = responses.remove(curr_chunk_id).unwrap();
-        while let Some(Ok(mut bytes)) = payload.next().await {
-            file.write_buf(&mut bytes)
-                .await
-                .map_err(|source| BaseError::Write {
-                    path: path.into(),
-                    source,
-                })?;
+    if let FileInfo::File { id, chunks, .. } = &file.file_info {
+        let chunks_url = format!("{}/api/chunks/file/{}", meta_url, id);
+        let target_path = target_dir.join(&file.name);
+        let path = target_path.as_path();
+        let groups: Vec<Vec<Chunk>> = get_request_json(c, &chunks_url).await?;
+        let mut file = FileFS::create(path)
+            .await
+            .map_err(|source| BaseError::Create {
+                path: path.into(),
+                source,
+            })?;
+        let requests = groups
+            .iter()
+            .map(|group| download_chunk(c, group, meta_url))
+            .collect::<Vec<_>>();
+        let expected_responses_count = requests.len();
+        let mut responses: HashMap<Uuid, Response> = join_all(requests)
+            .await
+            .into_iter()
+            .filter_map(|resp| resp.ok())
+            .collect();
+        if responses.len() < expected_responses_count {
+            return Err(SomeChunksNotAvailable.build().into());
+        }
+        for curr_chunk_id in chunks {
+            let mut payload = responses.remove(curr_chunk_id).unwrap();
+            while let Some(Ok(mut bytes)) = payload.next().await {
+                file.write_buf(&mut bytes)
+                    .await
+                    .map_err(|source| BaseError::Write {
+                        path: path.into(),
+                        source,
+                    })?;
+            }
         }
     }
     Ok(())
