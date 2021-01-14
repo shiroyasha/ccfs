@@ -79,8 +79,8 @@ pub async fn upload_item(c: &Client, meta_url: &str, path: &Path, prefix: &Path)
         .json()
         .await
         .context(ParseJson)?;
-    if let FileInfo::File(file_info) = &file.file_info {
-        upload_file(c, meta_url, &file_info.id, chunks, path).await?;
+    if let FileInfo::File { id, .. } = &file.file_info {
+        upload_file(c, meta_url, id, chunks, path).await?;
     }
     return Ok(());
 }
@@ -191,8 +191,8 @@ pub async fn download_file(
     file: &FileMetadata,
     target_dir: &Path,
 ) -> CCFSResult<()> {
-    if let FileInfo::File(file_info) = &file.file_info {
-        let chunks_url = format!("{}/api/chunks/file/{}", meta_url, &file_info.id);
+    if let FileInfo::File { id, chunks, .. } = &file.file_info {
+        let chunks_url = format!("{}/api/chunks/file/{}", meta_url, id);
         let target_path = target_dir.join(&file.name);
         let path = target_path.as_path();
         let groups: Vec<Vec<Chunk>> = get_request_json(c, &chunks_url).await?;
@@ -215,7 +215,7 @@ pub async fn download_file(
         if responses.len() < expected_responses_count {
             return Err(SomeChunksNotAvailable.build().into());
         }
-        for curr_chunk_id in &file_info.chunks {
+        for curr_chunk_id in chunks {
             let mut payload = responses.remove(curr_chunk_id).unwrap();
             while let Some(Ok(mut bytes)) = payload.next().await {
                 file.write_buf(&mut bytes)

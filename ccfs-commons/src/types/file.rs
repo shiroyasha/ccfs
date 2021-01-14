@@ -50,7 +50,7 @@ impl FileMetadata {
         let now = Utc::now();
         Self {
             name,
-            file_info: FileInfo::File(File::new(size, chunks)),
+            file_info: FileInfo::new_file(size, chunks),
             version: 1,
             created_at: now,
             modified_at: now,
@@ -76,7 +76,9 @@ impl FileMetadata {
         if !path.is_empty() {
             for segment in path.split_terminator('/') {
                 match curr.file_info {
-                    FileInfo::File(_) => return Err(format!("path {} doesn't exist", path).into()),
+                    FileInfo::File { .. } => {
+                        return Err(format!("path {} doesn't exist", path).into())
+                    }
                     _ => {
                         curr = curr
                             .children()?
@@ -94,7 +96,9 @@ impl FileMetadata {
         if !path.is_empty() {
             for segment in path.split_terminator('/') {
                 match curr.file_info {
-                    FileInfo::File(_) => return Err(format!("path {} doesn't exist", path).into()),
+                    FileInfo::File { .. } => {
+                        return Err(format!("path {} doesn't exist", path).into())
+                    }
                     _ => {
                         curr = curr
                             .children_mut()?
@@ -166,22 +170,19 @@ pub enum FileInfo {
     Directory {
         children: BTreeMap<String, FileMetadata>,
     },
-    File(File),
+    File {
+        id: Uuid,
+        size: u64,
+        chunks: Vec<Uuid>,
+        #[serde(default)]
+        num_of_completed_chunks: usize,
+        #[serde(default = "FileStatus::default")]
+        status: FileStatus,
+    },
 }
-
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
-pub struct File {
-    pub id: Uuid,
-    pub size: u64,
-    pub chunks: Vec<Uuid>,
-    #[serde(default)]
-    pub num_of_completed_chunks: usize,
-    #[serde(default = "FileStatus::default")]
-    pub status: FileStatus,
-}
-impl File {
-    pub fn new(size: u64, chunks: Vec<Uuid>) -> Self {
-        Self {
+impl FileInfo {
+    pub fn new_file(size: u64, chunks: Vec<Uuid>) -> Self {
+        Self::File {
             id: Uuid::new_v4(),
             size,
             chunks,
@@ -223,8 +224,8 @@ mod tests {
             .get("some.zip")
             .ok_or("some.zip not found")?;
         match &file.file_info {
-            FileInfo::File(f) => {
-                assert_eq!(f.size, 20);
+            FileInfo::File { size, .. } => {
+                assert_eq!(*size, 20);
             }
             _ => return Err("some.zip is dir".into()),
         }
@@ -265,7 +266,7 @@ mod tests {
         }
         let file = trie.traverse("some.zip")?;
         match &file.file_info {
-            FileInfo::File(_file) => assert_eq!(file.name, "some.zip"),
+            FileInfo::File { .. } => assert_eq!(file.name, "some.zip"),
             _ => return Err("not a file".into()),
         }
 

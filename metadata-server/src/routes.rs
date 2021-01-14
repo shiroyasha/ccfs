@@ -65,9 +65,9 @@ pub async fn create_file(
                 .unwrap()
                 .insert(file.name.clone(), file.clone());
         }
-        FileInfo::File(f) => {
+        FileInfo::File { id, .. } => {
             let mut files_map = files.write().map_err(|_| WriteLock.build())?;
-            files_map.insert(f.id, (dir_path.into(), file.clone()));
+            files_map.insert(*id, (dir_path.into(), file.clone()));
         }
     }
     Ok(HttpResponse::Ok().json(file))
@@ -103,10 +103,16 @@ pub async fn signal_chuck_upload_completed(
         .ok_or_else(|| NotFound.build())?;
     let chunk_set = chunks.entry(chunk.id).or_insert_with(HashSet::new);
     if chunk_set.is_empty() {
-        if let FileInfo::File(ref mut file_info) = file.file_info {
-            file_info.num_of_completed_chunks += 1;
-            if file_info.num_of_completed_chunks == file_info.chunks.len() {
-                file_info.status = FileStatus::Completed;
+        if let FileInfo::File {
+            num_of_completed_chunks,
+            chunks: file_chunks,
+            status,
+            ..
+        } = &mut file.file_info
+        {
+            *num_of_completed_chunks += 1;
+            if *num_of_completed_chunks == file_chunks.len() {
+                *status = FileStatus::Completed;
                 let mut tree = file_metadata_tree.write().map_err(|_| WriteLock.build())?;
                 let target_dir = tree.traverse_mut(path).map_err(|_| NotFound.build())?;
                 target_dir
