@@ -4,8 +4,8 @@ use actix_web::client::{Client, ClientResponse};
 use actix_web::dev::{Decompress, Payload};
 use actix_web::http::header::CONTENT_TYPE;
 use ccfs_commons::http_utils::read_body;
+use ccfs_commons::{chunk_name, Chunk, ChunkServer, FileInfo, FileMetadata, CHUNK_SIZE};
 use ccfs_commons::{errors::Error as BaseError, result::CCFSResult};
-use ccfs_commons::{Chunk, ChunkServer, FileInfo, FileMetadata, CHUNK_SIZE};
 use futures::future::join_all;
 use mpart_async::client::MultipartRequest;
 use rand::{seq::SliceRandom, thread_rng};
@@ -102,8 +102,7 @@ pub async fn upload_file(
     let requests = chunks
         .into_iter()
         .enumerate()
-        .map(|(i, chunk)| upload_chunk(c, &servers, path, (file_id, chunk, i)))
-        .collect::<Vec<_>>();
+        .map(|(i, chunk)| upload_chunk(c, &servers, path, (file_id, chunk, i)));
     let responses = join_all(requests).await;
     if responses.iter().filter(|resp| resp.is_err()).size_hint().0 > 0 {
         return Err(UploadChunks.build().into());
@@ -119,11 +118,13 @@ pub async fn upload_chunk(
     data: (&Uuid, Uuid, usize),
 ) -> CCFSResult<()> {
     let (file_id, chunk_id, part) = data;
-    let mut slice = servers.to_vec();
-    slice.shuffle(&mut thread_rng());
-    let chunk_file_name = format!("{}-{}", &chunk_id, &file_id);
+    let file_id_str = file_id.to_string();
+    let chunk_id_str = chunk_id.to_string();
+    let chunk_file_name = chunk_name(&file_id_str, &chunk_id_str);
     let content_type = "application/octet-stream";
-    for server in servers {
+    let mut rng = thread_rng();
+    for _ in 0..servers.len() {
+        let server = servers.choose(&mut rng).expect("servers is empty");
         let mut f = FileFS::open(path).await.map_err(|source| BaseError::Open {
             path: path.into(),
             source,
@@ -136,8 +137,8 @@ pub async fn upload_chunk(
             })?;
         let stream = reader_stream(f.take(CHUNK_SIZE));
         let mut mpart = MultipartRequest::default();
-        mpart.add_field("chunk_id", &chunk_id.to_string());
-        mpart.add_field("file_id", &file_id.to_string());
+        mpart.add_field("chunk_id", &chunk_id_str);
+        mpart.add_field("file_id", &file_id_str);
         mpart.add_stream("file", &chunk_file_name, content_type, stream);
         let url = format!("{}/api/upload", server.address);
         let resp = c
@@ -196,6 +197,9 @@ pub async fn download_file(
         let target_path = target_dir.join(&file.name);
         let path = target_path.as_path();
         let groups: Vec<Vec<Chunk>> = get_request_json(c, &chunks_url).await?;
+        if groups.len() < chunks.len() {
+            return Err(SomeChunksNotAvailable.build().into());
+        }
         let mut file = FileFS::create(path)
             .await
             .map_err(|source| BaseError::Create {
@@ -204,15 +208,14 @@ pub async fn download_file(
             })?;
         let requests = groups
             .iter()
-            .map(|group| download_chunk(c, group, meta_url))
-            .collect::<Vec<_>>();
-        let expected_responses_count = requests.len();
+            .map(|group| download_chunk(c, group, meta_url));
         let mut responses: HashMap<Uuid, Response> = join_all(requests)
             .await
             .into_iter()
             .filter_map(|resp| resp.ok())
+            .filter(|(_, r)| r.status().is_success())
             .collect();
-        if responses.len() < expected_responses_count {
+        if responses.len() < chunks.len() {
             return Err(SomeChunksNotAvailable.build().into());
         }
         for curr_chunk_id in chunks {
