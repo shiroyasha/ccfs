@@ -44,6 +44,9 @@ pub enum Error {
 
     #[snafu(display("Missing config value {}", key))]
     MissingConfigVal { key: String },
+
+    #[snafu(display("There are no available servers, try again later"))]
+    NoAvailableServers,
 }
 
 impl<'a> ResponseError for Error {
@@ -61,6 +64,7 @@ impl<'a> ResponseError for Error {
             | UploadSingleChunk { .. }
             | FileNotExist { .. }
             | NotAFile { .. }
+            | NoAvailableServers { .. }
             | MissingConfigVal { .. } => ErrorInternalServerError(display).into(),
         }
     }

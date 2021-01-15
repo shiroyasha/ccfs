@@ -40,8 +40,7 @@ pub async fn upload<T: AsRef<Path>>(c: &Client, meta_url: &str, file_path: T) ->
     }
     let path_prefix = path.ancestors().nth(1).unwrap().to_path_buf();
     let mut paths = vec![path];
-    while !paths.is_empty() {
-        let curr = paths.pop().unwrap();
+    while let Some(curr) = paths.pop() {
         upload_item(c, meta_url, curr.as_path(), &path_prefix).await?;
         if curr.is_dir() {
             paths.extend(
@@ -98,6 +97,9 @@ pub async fn upload_file(
 ) -> CCFSResult<()> {
     let servers: Vec<ChunkServer> =
         get_request_json(c, &format!("{}/api/servers", meta_url)).await?;
+    if servers.is_empty() {
+        return Err(NoAvailableServers.build().into());
+    }
 
     let requests = chunks
         .into_iter()
@@ -168,8 +170,7 @@ pub async fn download<T: AsRef<Path>>(
     let file: FileMetadata = get_request_json(c, &file_url).await?;
     let path = target_path.unwrap_or_else(|| Path::new(".")).to_path_buf();
     let mut items = vec![(file, path)];
-    while !items.is_empty() {
-        let (curr_f, curr_path) = items.pop().unwrap();
+    while let Some((curr_f, curr_path)) = items.pop() {
         if let FileInfo::Directory { children } = curr_f.file_info {
             let new_path = curr_path.join(curr_f.name);
             create_dir(&new_path)
@@ -212,8 +213,10 @@ pub async fn download_file(
         let mut responses: HashMap<Uuid, Response> = join_all(requests)
             .await
             .into_iter()
-            .filter_map(|resp| resp.ok())
-            .filter(|(_, r)| r.status().is_success())
+            .filter_map(|resp| match resp {
+                Ok(pair) if pair.1.status().is_success() => Some(pair),
+                _ => None,
+            })
             .collect();
         if responses.len() < chunks.len() {
             return Err(SomeChunksNotAvailable.build().into());
