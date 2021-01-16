@@ -1,6 +1,7 @@
 pub mod data;
 pub mod errors;
 pub mod http_utils;
+pub mod path;
 pub mod result;
 
 mod types;
