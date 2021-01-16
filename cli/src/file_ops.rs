@@ -14,7 +14,7 @@ use snafu::ResultExt;
 use std::collections::HashMap;
 use std::io::SeekFrom;
 use std::path::Path;
-use tokio::fs::{create_dir, File as FileFS};
+use tokio::fs::{create_dir, File};
 use tokio::io::{reader_stream, AsyncReadExt, AsyncWriteExt};
 use tokio::stream::StreamExt;
 use uuid::Uuid;
@@ -23,7 +23,7 @@ type Response = ClientResponse<Decompress<Payload>>;
 
 pub async fn list(c: &Client, meta_url: &str) -> CCFSResult<()> {
     let file: FileMetadata = get_request_json(c, &format!("{}/api/files", meta_url)).await?;
-    println!("{}", file.print_current_dir());
+    println!("{}", file.print_current_dir()?);
     Ok(())
 }
 
@@ -38,10 +38,13 @@ pub async fn upload<T: AsRef<Path>>(c: &Client, meta_url: &str, file_path: T) ->
     if !path.exists() {
         return Err(FileNotExist { path }.build().into());
     }
-    let path_prefix = path.ancestors().nth(1).unwrap().to_path_buf();
+    let path_prefix = path
+        .ancestors()
+        .nth(1)
+        .map(|p| p.to_path_buf())
+        .unwrap_or_default();
     let mut paths = vec![path];
-    while !paths.is_empty() {
-        let curr = paths.pop().unwrap();
+    while let Some(curr) = paths.pop() {
         upload_item(c, meta_url, curr.as_path(), &path_prefix).await?;
         if curr.is_dir() {
             paths.extend(
@@ -98,6 +101,9 @@ pub async fn upload_file(
 ) -> CCFSResult<()> {
     let servers: Vec<ChunkServer> =
         get_request_json(c, &format!("{}/api/servers", meta_url)).await?;
+    if servers.is_empty() {
+        return Err(NoAvailableServers.build().into());
+    }
 
     let requests = chunks
         .into_iter()
@@ -125,7 +131,7 @@ pub async fn upload_chunk(
     let mut rng = thread_rng();
     for _ in 0..servers.len() {
         let server = servers.choose(&mut rng).expect("servers is empty");
-        let mut f = FileFS::open(path).await.map_err(|source| BaseError::Open {
+        let mut f = File::open(path).await.map_err(|source| BaseError::Open {
             path: path.into(),
             source,
         })?;
@@ -166,19 +172,16 @@ pub async fn download<T: AsRef<Path>>(
     // get chunks and merge them into a file
     let file_url = format!("{}/api/files?path={}", meta_url, path.as_ref().display());
     let file: FileMetadata = get_request_json(c, &file_url).await?;
-    let path = target_path.unwrap_or_else(|| Path::new(".")).to_path_buf();
-    let mut items = vec![(file, path)];
-    while !items.is_empty() {
-        let (curr_f, curr_path) = items.pop().unwrap();
-        if let FileInfo::Directory { children } = curr_f.file_info {
-            let new_path = curr_path.join(curr_f.name);
-            create_dir(&new_path)
+    let mut curr_path = target_path.unwrap_or_else(|| Path::new(".")).to_path_buf();
+    for curr_f in file.bfs_iter() {
+        curr_path = curr_path.join(&curr_f.name);
+        if let FileInfo::Directory { .. } = &curr_f.file_info {
+            create_dir(&curr_path)
                 .await
                 .map_err(|source| BaseError::Create {
-                    path: new_path.clone(),
+                    path: curr_path.clone(),
                     source,
                 })?;
-            items.extend(children.into_iter().map(|(_, f)| (f, new_path.clone())));
         } else {
             download_file(c, meta_url, &curr_f, &curr_path).await?;
         }
@@ -200,7 +203,7 @@ pub async fn download_file(
         if groups.len() < chunks.len() {
             return Err(SomeChunksNotAvailable.build().into());
         }
-        let mut file = FileFS::create(path)
+        let mut file = File::create(path)
             .await
             .map_err(|source| BaseError::Create {
                 path: path.into(),
@@ -212,21 +215,24 @@ pub async fn download_file(
         let mut responses: HashMap<Uuid, Response> = join_all(requests)
             .await
             .into_iter()
-            .filter_map(|resp| resp.ok())
-            .filter(|(_, r)| r.status().is_success())
+            .filter_map(|resp| match resp {
+                Ok(pair) if pair.1.status().is_success() => Some(pair),
+                _ => None,
+            })
             .collect();
         if responses.len() < chunks.len() {
             return Err(SomeChunksNotAvailable.build().into());
         }
         for curr_chunk_id in chunks {
-            let mut payload = responses.remove(curr_chunk_id).unwrap();
-            while let Some(Ok(mut bytes)) = payload.next().await {
-                file.write_buf(&mut bytes)
-                    .await
-                    .map_err(|source| BaseError::Write {
-                        path: path.into(),
-                        source,
-                    })?;
+            if let Some(mut payload) = responses.remove(curr_chunk_id) {
+                while let Some(Ok(mut bytes)) = payload.next().await {
+                    file.write_buf(&mut bytes)
+                        .await
+                        .map_err(|source| BaseError::Write {
+                            path: path.into(),
+                            source,
+                        })?;
+                }
             }
         }
     }

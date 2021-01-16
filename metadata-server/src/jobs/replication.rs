@@ -43,9 +43,10 @@ fn replicate_files(
                 false => None,
             })
             .collect::<HashSet<_>>();
-        let files = get_files(&files_tree);
+        let files = files_tree
+            .dfs_iter()
+            .filter(|f| matches!(f.file_info, FileInfo::File { .. }));
         let futures = files
-            .iter()
             .map(|f| replicate_file(&c, f, &chunks, &active_servers, &servers, required_replicas));
         join_all(futures).await;
         Ok(())
@@ -128,17 +129,4 @@ async fn send_replication_requests(
         remaining -= success_responses.count();
     }
     Ok(())
-}
-
-fn get_files(tree: &FileMetadata) -> Vec<&FileMetadata> {
-    let mut res = Vec::new();
-    match &tree.file_info {
-        FileInfo::Directory { ref children } => {
-            for child in children.values() {
-                res.append(&mut get_files(&child));
-            }
-        }
-        _ => res.push(&tree),
-    }
-    res
 }

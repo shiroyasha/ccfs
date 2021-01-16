@@ -16,7 +16,7 @@ use routes::{
 use snafu::ResultExt;
 use std::collections::{HashMap, HashSet};
 use std::env;
-use std::fs::File as FileFS;
+use std::fs::File;
 use std::path::Path;
 use std::sync::{Arc, RwLock};
 use tokio::task;
@@ -33,7 +33,7 @@ const PORT: &str = "PORT";
 async fn init_metadata_tree(path: &Path) -> CCFSResult<FileMetadataTree> {
     let tree = match path.exists() {
         true => {
-            let file = FileFS::open(path).map_err(|source| BaseError::Read {
+            let file = File::open(path).map_err(|source| BaseError::Read {
                 path: path.into(),
                 source,
             })?;
