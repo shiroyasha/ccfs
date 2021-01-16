@@ -1,5 +1,5 @@
 use crate::{errors::Error::*, result::CCFSResult};
-use crate::{BFSTreeIter, DFSTreeIter};
+use crate::{BFSTreeIter, DFSTreeIter, TreeNavigator, TreeZipper};
 use chrono::serde::ts_milliseconds;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
@@ -32,7 +32,7 @@ pub struct FileMetadata {
 
 impl FileMetadata {
     pub fn create_root() -> Self {
-        Self::create_dir("root".into())
+        Self::create_dir("/".into())
     }
 
     pub fn create_dir(name: String) -> Self {
@@ -77,23 +77,14 @@ impl FileMetadata {
         }
     }
 
-    pub fn traverse(&self, target_path: &str) -> CCFSResult<&Self> {
-        let mut curr = self;
+    pub fn traverse<'a>(&'a self, target_path: &'a str) -> CCFSResult<&Self> {
+        let mut curr = self.navigate();
         if !target_path.is_empty() {
-            let path = PathBuf::from(target_path);
             for segment in target_path.split_terminator('/') {
-                match curr.file_info {
-                    FileInfo::File { .. } => return Err(NotExist { path: path.clone() }.into()),
-                    _ => {
-                        curr = curr
-                            .children()?
-                            .get(segment)
-                            .ok_or_else(|| NotExist { path: path.clone() })?
-                    }
-                }
+                curr = curr.child(segment)?;
             }
         }
-        Ok(curr)
+        Ok(curr.node)
     }
 
     pub fn traverse_mut(&mut self, target_path: &str) -> CCFSResult<&mut Self> {
@@ -166,6 +157,20 @@ impl FileMetadata {
     pub fn bfs_iter(&self) -> BFSTreeIter {
         BFSTreeIter::new(self)
     }
+
+    pub fn navigate(&'_ self) -> TreeNavigator {
+        TreeNavigator {
+            node: self,
+            parent: None,
+        }
+    }
+
+    pub fn zipper(self) -> TreeZipper {
+        TreeZipper {
+            node: self,
+            parent: None,
+        }
+    }
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
@@ -196,7 +201,7 @@ impl FileInfo {
 }
 
 #[cfg(test)]
-mod tests {
+pub mod tests {
     use super::*;
     use std::str::FromStr;
 
@@ -240,7 +245,7 @@ mod tests {
         );
         assert_eq!(
             format!("{:?}", dir1.traverse("dir1/subdir").unwrap_err()),
-            "NotExist { path: \"dir1/subdir\" }"
+            "NotExist { path: \"dir1\" }"
         );
         let dir2 = trie.traverse("dir2")?;
         assert!(matches!(dir2.file_info, FileInfo::Directory { .. }));
@@ -252,7 +257,7 @@ mod tests {
         Ok(())
     }
 
-    fn add_dir2(trie: &mut FileMetadata) -> CCFSResult<()> {
+    pub fn add_dir2(trie: &mut FileMetadata) -> CCFSResult<()> {
         trie.insert_dir("dir2")?;
         let dir2 = trie.traverse_mut("dir2")?;
         dir2.insert_file(
@@ -271,7 +276,7 @@ mod tests {
         Ok(())
     }
 
-    fn build() -> CCFSResult<FileMetadata> {
+    pub fn build() -> CCFSResult<FileMetadata> {
         let mut trie = FileMetadata::create_root();
         trie.insert_dir("dir1")?;
         add_dir2(&mut trie)?;
