@@ -14,7 +14,7 @@ use snafu::ResultExt;
 use std::collections::HashMap;
 use std::io::SeekFrom;
 use std::path::Path;
-use tokio::fs::{create_dir, File as FileFS};
+use tokio::fs::{create_dir, File};
 use tokio::io::{reader_stream, AsyncReadExt, AsyncWriteExt};
 use tokio::stream::StreamExt;
 use uuid::Uuid;
@@ -131,7 +131,7 @@ pub async fn upload_chunk(
     let mut rng = thread_rng();
     for _ in 0..servers.len() {
         let server = servers.choose(&mut rng).expect("servers is empty");
-        let mut f = FileFS::open(path).await.map_err(|source| BaseError::Open {
+        let mut f = File::open(path).await.map_err(|source| BaseError::Open {
             path: path.into(),
             source,
         })?;
@@ -203,7 +203,7 @@ pub async fn download_file(
         if groups.len() < chunks.len() {
             return Err(SomeChunksNotAvailable.build().into());
         }
-        let mut file = FileFS::create(path)
+        let mut file = File::create(path)
             .await
             .map_err(|source| BaseError::Create {
                 path: path.into(),

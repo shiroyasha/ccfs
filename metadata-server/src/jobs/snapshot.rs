@@ -2,7 +2,7 @@ use crate::FileMetadataTree;
 use ccfs_commons::{errors::Error as BaseError, result::CCFSResult};
 use futures::future::{FutureExt, LocalBoxFuture};
 use std::path::PathBuf;
-use tokio::fs::{create_dir_all, rename, File as FileFS};
+use tokio::fs::{create_dir_all, rename, File};
 use tokio::io::AsyncWriteExt;
 use tokio::time::{delay_for, Duration};
 
@@ -45,13 +45,12 @@ fn create_snapshot(
                     source,
                 })?;
         }
-        let mut temp_file =
-            FileFS::create(&temp_path)
-                .await
-                .map_err(|source| BaseError::Create {
-                    path: temp_path.clone(),
-                    source,
-                })?;
+        let mut temp_file = File::create(&temp_path)
+            .await
+            .map_err(|source| BaseError::Create {
+                path: temp_path.clone(),
+                source,
+            })?;
         temp_file
             .write_all(&bincode::serialize(&*metadata_tree).unwrap())
             .await

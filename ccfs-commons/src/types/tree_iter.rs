@@ -35,7 +35,7 @@ pub struct BFSTreeIter<'a> {
 impl<'a> BFSTreeIter<'a> {
     pub fn new(item: &'a FileMetadata) -> Self {
         Self {
-            items: VecDeque::from(vec![item]),
+            items: vec![item].into(),
         }
     }
 }

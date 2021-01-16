@@ -10,7 +10,7 @@ use snafu::ResultExt;
 use std::collections::HashMap;
 use std::path::Path;
 use structopt::StructOpt;
-use tokio::fs::File as FileFS;
+use tokio::fs::File;
 use tokio::io::AsyncReadExt;
 
 #[derive(Debug, StructOpt)]
@@ -60,12 +60,12 @@ async fn main() -> CCFSResult<()> {
         return Err(NotAFile { path }.build().into());
     }
 
-    let mut config_file = FileFS::open(path).await.map_err(|source| BaseError::Open {
+    let mut config_file = File::open(path).await.map_err(|source| BaseError::Open {
         path: path.into(),
         source,
     })?;
     let mut content = String::new();
-    FileFS::read_to_string(&mut config_file, &mut content)
+    File::read_to_string(&mut config_file, &mut content)
         .await
         .map_err(|source| BaseError::Read {
             path: path.into(),

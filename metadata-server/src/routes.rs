@@ -61,8 +61,7 @@ pub async fn create_file(
     match &file.file_info {
         FileInfo::Directory { .. } => {
             target
-                .children_mut()
-                .unwrap()
+                .children_mut()?
                 .insert(file.name.clone(), file.clone());
         }
         FileInfo::File { id, .. } => {
@@ -116,8 +115,7 @@ pub async fn signal_chuck_upload_completed(
                 let mut tree = file_metadata_tree.write().map_err(|_| WriteLock.build())?;
                 let target_dir = tree.traverse_mut(path).map_err(|_| NotFound.build())?;
                 target_dir
-                    .children_mut()
-                    .unwrap()
+                    .children_mut()?
                     .insert(file.name.clone(), file.clone());
             }
         }
