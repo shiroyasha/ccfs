@@ -1,8 +1,10 @@
+use crate::TreeIter;
+use crate::{errors::Error::*, result::CCFSResult};
 use chrono::serde::ts_milliseconds;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
-use std::error::Error;
+use std::path::PathBuf;
 use uuid::Uuid;
 
 #[derive(Debug, Serialize, Deserialize, Clone, Copy, PartialEq, Eq)]
@@ -57,33 +59,36 @@ impl FileMetadata {
         }
     }
 
-    pub fn children(&self) -> Result<&BTreeMap<String, FileMetadata>, Box<dyn Error>> {
-        match self.file_info {
-            FileInfo::Directory { ref children } => Ok(children),
-            _ => Err("not a dir".into()),
+    pub fn children(&self) -> CCFSResult<&BTreeMap<String, FileMetadata>> {
+        if let FileInfo::Directory { ref children } = self.file_info {
+            Ok(children)
+        } else {
+            let path = PathBuf::from(&self.name);
+            Err(NotADir { path }.into())
         }
     }
 
-    pub fn children_mut(&mut self) -> Result<&mut BTreeMap<String, FileMetadata>, Box<dyn Error>> {
-        match self.file_info {
-            FileInfo::Directory { ref mut children } => Ok(children),
-            _ => Err("not a dir".into()),
+    pub fn children_mut(&mut self) -> CCFSResult<&mut BTreeMap<String, FileMetadata>> {
+        if let FileInfo::Directory { ref mut children } = self.file_info {
+            Ok(children)
+        } else {
+            let path = PathBuf::from(&self.name);
+            Err(NotADir { path }.into())
         }
     }
 
-    pub fn traverse(&self, path: &str) -> Result<&Self, Box<dyn Error>> {
+    pub fn traverse(&self, target_path: &str) -> CCFSResult<&Self> {
         let mut curr = self;
-        if !path.is_empty() {
-            for segment in path.split_terminator('/') {
+        if !target_path.is_empty() {
+            let path = PathBuf::from(target_path);
+            for segment in target_path.split_terminator('/') {
                 match curr.file_info {
-                    FileInfo::File { .. } => {
-                        return Err(format!("path {} doesn't exist", path).into())
-                    }
+                    FileInfo::File { .. } => return Err(NotExist { path: path.clone() }.into()),
                     _ => {
                         curr = curr
                             .children()?
                             .get(segment)
-                            .ok_or(format!("path {} doesn't exist", path))?
+                            .ok_or_else(|| NotExist { path: path.clone() })?
                     }
                 }
             }
@@ -91,19 +96,18 @@ impl FileMetadata {
         Ok(curr)
     }
 
-    pub fn traverse_mut(&mut self, path: &str) -> Result<&mut Self, Box<dyn Error>> {
+    pub fn traverse_mut(&mut self, target_path: &str) -> CCFSResult<&mut Self> {
         let mut curr = self;
-        if !path.is_empty() {
-            for segment in path.split_terminator('/') {
+        if !target_path.is_empty() {
+            let path = PathBuf::from(target_path);
+            for segment in target_path.split_terminator('/') {
                 match curr.file_info {
-                    FileInfo::File { .. } => {
-                        return Err(format!("path {} doesn't exist", path).into())
-                    }
+                    FileInfo::File { .. } => return Err(NotExist { path: path.clone() }.into()),
                     _ => {
                         curr = curr
                             .children_mut()?
                             .get_mut(segment)
-                            .ok_or(format!("path {} doesn't exist", path))?
+                            .ok_or_else(|| NotExist { path: path.clone() })?
                     }
                 }
             }
@@ -111,18 +115,13 @@ impl FileMetadata {
         Ok(curr)
     }
 
-    pub fn insert_dir(&mut self, name: &str) -> Result<(), Box<dyn Error>> {
+    pub fn insert_dir(&mut self, name: &str) -> CCFSResult<()> {
         self.children_mut()?
             .insert(name.into(), Self::create_dir(name.into()));
         Ok(())
     }
 
-    pub fn insert_file(
-        &mut self,
-        name: &str,
-        size: u64,
-        chunks: Vec<Uuid>,
-    ) -> Result<(), Box<dyn Error>> {
+    pub fn insert_file(&mut self, name: &str, size: u64, chunks: Vec<Uuid>) -> CCFSResult<()> {
         self.children_mut()?
             .insert(name.into(), Self::create_file(name.into(), size, chunks));
         Ok(())
@@ -146,22 +145,22 @@ impl FileMetadata {
         s
     }
 
-    pub fn print_current_dir(&self) -> String {
+    pub fn print_current_dir(&self) -> CCFSResult<String> {
         let mut s = String::new();
-        match &self.children() {
-            Ok(children) => {
-                let mut iter = children.values().peekable();
-                while let Some(child) = iter.next() {
-                    let has_next = iter.peek().is_some();
-                    s.push_str(&child.name);
-                    if has_next {
-                        s.push('\n');
-                    }
-                }
-                s
+        let children = &self.children()?;
+        let mut iter = children.values().peekable();
+        while let Some(child) = iter.next() {
+            let has_next = iter.peek().is_some();
+            s.push_str(&child.name);
+            if has_next {
+                s.push('\n');
             }
-            _ => unreachable!(),
         }
+        Ok(s)
+    }
+
+    pub fn iter(&self) -> TreeIter {
+        TreeIter::new(self)
     }
 }
 
@@ -198,88 +197,64 @@ mod tests {
     use std::str::FromStr;
 
     #[test]
-    fn trie_insert_test() -> Result<(), Box<dyn Error>> {
+    fn trie_insert_test() -> CCFSResult<()> {
         let mut trie = FileMetadata::create_root();
         trie.insert_dir("dir1")?;
         assert_eq!(trie.children()?.len(), 1);
-        assert_eq!(
-            trie.children()?.get("dir1").ok_or("missing dir1")?.name,
-            "dir1"
-        );
+        assert_eq!(trie.children()?.get("dir1").unwrap().name, "dir1");
         trie.insert_dir("dir2")?;
 
         assert_eq!(trie.children()?.len(), 2);
-        assert_eq!(
-            trie.children()?.get("dir2").ok_or("missing dir2")?.name,
-            "dir2"
-        );
+        assert_eq!(trie.children()?.get("dir2").unwrap().name, "dir2");
         trie.insert_file(
             "some.zip",
             20,
-            vec![Uuid::from_str("ec73d743-050b-4f52-992a-d1102340d739")?],
+            vec![Uuid::from_str("ec73d743-050b-4f52-992a-d1102340d739").unwrap()],
         )?;
         assert_eq!(trie.children()?.len(), 3);
-        let file = &trie
-            .children()?
-            .get("some.zip")
-            .ok_or("some.zip not found")?;
-        match &file.file_info {
-            FileInfo::File { size, .. } => {
-                assert_eq!(*size, 20);
-            }
-            _ => return Err("some.zip is dir".into()),
-        }
+        let file = &trie.children()?.get("some.zip").unwrap();
+        assert!(matches!(file.file_info, FileInfo::File { size: 20, .. }));
         Ok(())
     }
 
     #[test]
-    fn trie_traverse_test() -> Result<(), Box<dyn Error>> {
+    fn trie_traverse_test() -> CCFSResult<()> {
         let mut trie = FileMetadata::create_root();
         trie.insert_dir("dir1")?;
         trie.insert_dir("dir2")?;
         trie.insert_file(
             "some.zip",
             20,
-            vec![Uuid::from_str("ec73d743-050b-4f52-992a-d1102340d739")?],
+            vec![Uuid::from_str("ec73d743-050b-4f52-992a-d1102340d739").unwrap()],
         )?;
         let dir1 = trie.traverse("dir1")?;
-        match &dir1.file_info {
-            FileInfo::Directory { .. } => assert_eq!(dir1.name, "dir1"),
-            _ => return Err("not a dir".into()),
-        }
-        match dir1.traverse("subdir") {
-            Err(err) => {
-                assert_eq!(err.to_string(), "path subdir doesn\'t exist");
-            }
-            _ => return Err("should be an error".into()),
-        }
-        match trie.traverse("dir1/subdir") {
-            Err(err) => {
-                assert_eq!(err.to_string(), "path dir1/subdir doesn\'t exist");
-            }
-            _ => return Err("should be an error".into()),
-        }
+        assert!(matches!(dir1.file_info, FileInfo::Directory { .. }));
+        assert_eq!(dir1.name, "dir1");
+        assert_eq!(
+            dir1.traverse("subdir").unwrap_err().to_string(),
+            "path subdir doesn\'t exist"
+        );
+        assert_eq!(
+            dir1.traverse("dir1/subdir").unwrap_err().to_string(),
+            "path dir1/subdir doesn\'t exist"
+        );
         let dir2 = trie.traverse("dir2")?;
-        match &dir2.file_info {
-            FileInfo::Directory { .. } => assert_eq!(dir2.name, "dir2"),
-            _ => return Err("not a dir".into()),
-        }
+        assert!(matches!(dir2.file_info, FileInfo::Directory { .. }));
+        assert_eq!(dir2.name, "dir2");
         let file = trie.traverse("some.zip")?;
-        match &file.file_info {
-            FileInfo::File { .. } => assert_eq!(file.name, "some.zip"),
-            _ => return Err("not a file".into()),
-        }
+        assert!(matches!(file.file_info, FileInfo::File { .. }));
+        assert_eq!(file.name, "some.zip");
 
         Ok(())
     }
 
-    fn add_dir2(trie: &mut FileMetadata) -> Result<(), Box<dyn Error>> {
+    fn add_dir2(trie: &mut FileMetadata) -> CCFSResult<()> {
         trie.insert_dir("dir2")?;
         let dir2 = trie.traverse_mut("dir2")?;
         dir2.insert_file(
             "test.txt",
             10,
-            vec![Uuid::from_str("1a6e7006-12a7-4935-b8c0-58fa7ea84b09")?],
+            vec![Uuid::from_str("1a6e7006-12a7-4935-b8c0-58fa7ea84b09").unwrap()],
         )?;
         dir2.insert_dir("subdir")?;
         let subdir = dir2.traverse_mut("subdir")?;
@@ -287,52 +262,52 @@ mod tests {
         subdir.insert_file(
             "file",
             100,
-            vec![Uuid::from_str("6d53a85f-505b-4a1a-ae6d-f7c18761d04a")?],
+            vec![Uuid::from_str("6d53a85f-505b-4a1a-ae6d-f7c18761d04a").unwrap()],
         )?;
         Ok(())
     }
 
-    fn build() -> Result<FileMetadata, Box<dyn Error>> {
+    fn build() -> CCFSResult<FileMetadata> {
         let mut trie = FileMetadata::create_root();
         trie.insert_dir("dir1")?;
         add_dir2(&mut trie)?;
         trie.insert_file(
             "some.zip",
             0,
-            vec![Uuid::from_str("ec73d743-050b-4f52-992a-d1102340d739")?],
+            vec![Uuid::from_str("ec73d743-050b-4f52-992a-d1102340d739").unwrap()],
         )?;
 
         Ok(trie)
     }
 
     #[test]
-    fn trie_print_subtree_test() -> Result<(), Box<dyn Error>> {
+    fn trie_print_subtree_test() -> CCFSResult<()> {
         let trie = build()?;
-        let expected = std::fs::read_to_string("expected-tree.txt")?;
+        let expected = std::fs::read_to_string("expected-tree.txt").unwrap();
         assert_eq!(trie.print_subtree(), expected);
         Ok(())
     }
 
     #[test]
-    fn trie_print_single_dir_subtree_test() -> Result<(), Box<dyn Error>> {
+    fn trie_print_single_dir_subtree_test() -> CCFSResult<()> {
         let mut trie = FileMetadata::create_root();
         add_dir2(&mut trie)?;
-        let expected = std::fs::read_to_string("expected-single-dir-tree.txt")?;
+        let expected = std::fs::read_to_string("expected-single-dir-tree.txt").unwrap();
         assert_eq!(trie.print_subtree(), expected);
         Ok(())
     }
 
     #[test]
-    fn trie_print_current_dir_test() -> Result<(), Box<dyn Error>> {
+    fn trie_print_current_dir_test() -> CCFSResult<()> {
         let trie = build()?;
-        assert_eq!(trie.print_current_dir(), "dir1\ndir2\nsome.zip");
-        assert_eq!(trie.traverse("dir1")?.print_current_dir(), "");
+        assert_eq!(trie.print_current_dir()?, "dir1\ndir2\nsome.zip");
+        assert_eq!(trie.traverse("dir1")?.print_current_dir()?, "");
         assert_eq!(
-            trie.traverse("dir2")?.print_current_dir(),
+            trie.traverse("dir2")?.print_current_dir()?,
             "subdir\ntest.txt"
         );
         assert_eq!(
-            trie.traverse("dir2/subdir")?.print_current_dir(),
+            trie.traverse("dir2/subdir")?.print_current_dir()?,
             "file\ntmp"
         );
         Ok(())

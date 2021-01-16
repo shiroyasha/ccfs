@@ -23,7 +23,7 @@ type Response = ClientResponse<Decompress<Payload>>;
 
 pub async fn list(c: &Client, meta_url: &str) -> CCFSResult<()> {
     let file: FileMetadata = get_request_json(c, &format!("{}/api/files", meta_url)).await?;
-    println!("{}", file.print_current_dir());
+    println!("{}", file.print_current_dir()?);
     Ok(())
 }
 
@@ -222,14 +222,15 @@ pub async fn download_file(
             return Err(SomeChunksNotAvailable.build().into());
         }
         for curr_chunk_id in chunks {
-            let mut payload = responses.remove(curr_chunk_id).unwrap();
-            while let Some(Ok(mut bytes)) = payload.next().await {
-                file.write_buf(&mut bytes)
-                    .await
-                    .map_err(|source| BaseError::Write {
-                        path: path.into(),
-                        source,
-                    })?;
+            if let Some(mut payload) = responses.remove(curr_chunk_id) {
+                while let Some(Ok(mut bytes)) = payload.next().await {
+                    file.write_buf(&mut bytes)
+                        .await
+                        .map_err(|source| BaseError::Write {
+                            path: path.into(),
+                            source,
+                        })?;
+                }
             }
         }
     }

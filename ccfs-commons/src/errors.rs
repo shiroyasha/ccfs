@@ -63,6 +63,12 @@ pub enum Error {
         source: actix_web::client::SendRequestError,
         url: String,
     },
+
+    #[snafu(display("{} is not a directory", path.display()))]
+    NotADir { path: PathBuf },
+
+    #[snafu(display("Path {} doesn't exist", path.display()))]
+    NotExist { path: PathBuf },
 }
 
 impl ResponseError for Error {
@@ -75,6 +81,8 @@ impl ResponseError for Error {
             | Read { .. }
             | Write { .. }
             | Rename { .. }
+            | NotADir { .. }
+            | NotExist { .. }
             | FailedRequest { .. }
             | Unsuccessful { .. } => ErrorInternalServerError(display).into(),
             ParseString { .. } | ParseUuid { .. } => ErrorBadRequest(display).into(),
