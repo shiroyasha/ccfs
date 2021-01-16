@@ -1,5 +1,5 @@
-use crate::TreeIter;
 use crate::{errors::Error::*, result::CCFSResult};
+use crate::{BFSTreeIter, DFSTreeIter};
 use chrono::serde::ts_milliseconds;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
@@ -159,8 +159,12 @@ impl FileMetadata {
         Ok(s)
     }
 
-    pub fn iter(&self) -> TreeIter {
-        TreeIter::new(self)
+    pub fn dfs_iter(&self) -> DFSTreeIter {
+        DFSTreeIter::new(self)
+    }
+
+    pub fn bfs_iter(&self) -> BFSTreeIter {
+        BFSTreeIter::new(self)
     }
 }
 

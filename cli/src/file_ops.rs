@@ -38,7 +38,11 @@ pub async fn upload<T: AsRef<Path>>(c: &Client, meta_url: &str, file_path: T) ->
     if !path.exists() {
         return Err(FileNotExist { path }.build().into());
     }
-    let path_prefix = path.ancestors().nth(1).unwrap().to_path_buf();
+    let path_prefix = path
+        .ancestors()
+        .nth(1)
+        .map(|p| p.to_path_buf())
+        .unwrap_or_default();
     let mut paths = vec![path];
     while let Some(curr) = paths.pop() {
         upload_item(c, meta_url, curr.as_path(), &path_prefix).await?;
@@ -168,18 +172,16 @@ pub async fn download<T: AsRef<Path>>(
     // get chunks and merge them into a file
     let file_url = format!("{}/api/files?path={}", meta_url, path.as_ref().display());
     let file: FileMetadata = get_request_json(c, &file_url).await?;
-    let path = target_path.unwrap_or_else(|| Path::new(".")).to_path_buf();
-    let mut items = vec![(file, path)];
-    while let Some((curr_f, curr_path)) = items.pop() {
-        if let FileInfo::Directory { children } = curr_f.file_info {
-            let new_path = curr_path.join(curr_f.name);
-            create_dir(&new_path)
+    let mut curr_path = target_path.unwrap_or_else(|| Path::new(".")).to_path_buf();
+    for curr_f in file.bfs_iter() {
+        curr_path = curr_path.join(&curr_f.name);
+        if let FileInfo::Directory { .. } = &curr_f.file_info {
+            create_dir(&curr_path)
                 .await
                 .map_err(|source| BaseError::Create {
-                    path: new_path.clone(),
+                    path: curr_path.clone(),
                     source,
                 })?;
-            items.extend(children.into_iter().map(|(_, f)| (f, new_path.clone())));
         } else {
             download_file(c, meta_url, &curr_f, &curr_path).await?;
         }

@@ -44,7 +44,7 @@ fn replicate_files(
             })
             .collect::<HashSet<_>>();
         let files = files_tree
-            .iter()
+            .dfs_iter()
             .filter(|f| matches!(f.file_info, FileInfo::File { .. }));
         let futures = files
             .map(|f| replicate_file(&c, f, &chunks, &active_servers, &servers, required_replicas));
