@@ -1,4 +1,4 @@
-root
+/
 ├─ dir1
 ├─ dir2
 │  ├─ subdir
