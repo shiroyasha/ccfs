@@ -4,7 +4,7 @@ use actix_web::error::{ErrorBadRequest, ErrorInternalServerError};
 use actix_web::{HttpResponse, ResponseError};
 use snafu::Snafu;
 
-#[derive(Debug, Snafu)]
+#[derive(Snafu)]
 pub struct CCFSResponseError {
     pub inner: Box<dyn ResponseError>,
 }
@@ -12,6 +12,12 @@ pub struct CCFSResponseError {
 impl ResponseError for CCFSResponseError {
     fn error_response(&self) -> HttpResponse {
         self.inner.error_response()
+    }
+}
+
+impl std::fmt::Debug for CCFSResponseError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{:?}", self.inner)
     }
 }
 

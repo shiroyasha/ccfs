@@ -235,12 +235,12 @@ mod tests {
         assert!(matches!(dir1.file_info, FileInfo::Directory { .. }));
         assert_eq!(dir1.name, "dir1");
         assert_eq!(
-            dir1.traverse("subdir").unwrap_err().to_string(),
-            "path subdir doesn\'t exist"
+            format!("{:?}", dir1.traverse("subdir").unwrap_err()),
+            "NotExist { path: \"subdir\" }"
         );
         assert_eq!(
-            dir1.traverse("dir1/subdir").unwrap_err().to_string(),
-            "path dir1/subdir doesn\'t exist"
+            format!("{:?}", dir1.traverse("dir1/subdir").unwrap_err()),
+            "NotExist { path: \"dir1/subdir\" }"
         );
         let dir2 = trie.traverse("dir2")?;
         assert!(matches!(dir2.file_info, FileInfo::Directory { .. }));
