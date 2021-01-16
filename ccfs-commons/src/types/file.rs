@@ -201,7 +201,7 @@ impl FileInfo {
 }
 
 #[cfg(test)]
-mod tests {
+pub mod tests {
     use super::*;
     use std::str::FromStr;
 
@@ -257,7 +257,7 @@ mod tests {
         Ok(())
     }
 
-    fn add_dir2(trie: &mut FileMetadata) -> CCFSResult<()> {
+    pub fn add_dir2(trie: &mut FileMetadata) -> CCFSResult<()> {
         trie.insert_dir("dir2")?;
         let dir2 = trie.traverse_mut("dir2")?;
         dir2.insert_file(
@@ -276,7 +276,7 @@ mod tests {
         Ok(())
     }
 
-    fn build() -> CCFSResult<FileMetadata> {
+    pub fn build() -> CCFSResult<FileMetadata> {
         let mut trie = FileMetadata::create_root();
         trie.insert_dir("dir1")?;
         add_dir2(&mut trie)?;
