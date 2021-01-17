@@ -5,6 +5,7 @@ use actix_web::{HttpResponse, ResponseError};
 use snafu::Snafu;
 
 #[derive(Snafu)]
+#[snafu(display("{}", inner))]
 pub struct CCFSResponseError {
     pub inner: Box<dyn ResponseError>,
 }
@@ -75,6 +76,9 @@ pub enum Error {
 
     #[snafu(display("Path {} doesn't exist", path.display()))]
     NotExist { path: PathBuf },
+
+    #[snafu(display("Invalid path: {}", msg))]
+    InvalidPath { msg: String },
 }
 
 impl ResponseError for Error {
@@ -89,6 +93,7 @@ impl ResponseError for Error {
             | Rename { .. }
             | NotADir { .. }
             | NotExist { .. }
+            | InvalidPath { .. }
             | FailedRequest { .. }
             | Unsuccessful { .. } => ErrorInternalServerError(display).into(),
             ParseString { .. } | ParseUuid { .. } => ErrorBadRequest(display).into(),
