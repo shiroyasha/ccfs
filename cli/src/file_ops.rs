@@ -72,16 +72,11 @@ pub async fn upload_item(c: &Client, meta_url: &str, path: &Path, prefix: &Path)
             FileMetadata::create_file(file_name, file_meta.len(), chunks.clone())
         }
     };
-    let upload_url = format!(
-        "{}/api/files/upload?path={}",
-        meta_url,
-        path.strip_prefix(prefix).unwrap().display()
-    );
-    let file: FileMetadata = post_request(c, &upload_url, file_data)
-        .await?
-        .json()
-        .await
-        .context(ParseJson)?;
+    let relative_path = path.strip_prefix(prefix).unwrap();
+    let target_dir = relative_path.ancestors().nth(1).unwrap().display();
+    let upload_url = format!("{}/api/files/upload?path={}", meta_url, target_dir);
+    let mut resp = post_request(c, &upload_url, file_data).await?;
+    let file: FileMetadata = resp.json().await.context(ParseJson)?;
     if let FileInfo::File { id, .. } = &file.file_info {
         upload_file(c, meta_url, id, chunks, path).await?;
     }
