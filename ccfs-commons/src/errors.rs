@@ -56,6 +56,12 @@ pub enum Error {
         to: PathBuf,
     },
 
+    #[snafu(display("Unable to remove '{}': {}", path.display(), source))]
+    Remove {
+        source: tokio::io::Error,
+        path: PathBuf,
+    },
+
     #[snafu(display("Unable to parse to String: '{}'", source))]
     ParseString { source: std::string::FromUtf8Error },
 
@@ -91,6 +97,7 @@ impl ResponseError for Error {
             | Read { .. }
             | Write { .. }
             | Rename { .. }
+            | Remove { .. }
             | NotADir { .. }
             | NotExist { .. }
             | InvalidPath { .. }

@@ -1,5 +1,5 @@
 use crate::{errors::Error::*, result::CCFSResult};
-use crate::{BFSTreeIter, DFSTreeIter, TreeNavigator, TreeZipper, ROOT_DIR};
+use crate::{BFSPathsIter, BFSTreeIter, DFSTreeIter, TreeNavigator, TreeZipper, ROOT_DIR};
 use chrono::serde::ts_milliseconds;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
@@ -158,6 +158,10 @@ impl FileMetadata {
 
     pub fn bfs_iter(&self) -> BFSTreeIter {
         BFSTreeIter::new(self)
+    }
+
+    pub fn bfs_paths_iter(&self) -> BFSPathsIter {
+        BFSPathsIter::new(self)
     }
 
     pub fn navigate(&'_ self) -> TreeNavigator {

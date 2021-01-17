@@ -4,7 +4,7 @@ use actix_web::client::{Client, ClientResponse};
 use actix_web::dev::{Decompress, Payload};
 use actix_web::http::header::CONTENT_TYPE;
 use ccfs_commons::http_utils::read_body;
-use ccfs_commons::{chunk_name, Chunk, ChunkServer, FileInfo, FileMetadata, CHUNK_SIZE};
+use ccfs_commons::{chunk_name, Chunk, ChunkServer, FileInfo, FileMetadata, CHUNK_SIZE, CURR_DIR};
 use ccfs_commons::{errors::Error as BaseError, result::CCFSResult};
 use futures::future::join_all;
 use mpart_async::client::MultipartRequest;
@@ -14,7 +14,7 @@ use snafu::ResultExt;
 use std::collections::HashMap;
 use std::io::SeekFrom;
 use std::path::Path;
-use tokio::fs::{create_dir, File};
+use tokio::fs::{create_dir, create_dir_all, remove_dir_all, rename, File};
 use tokio::io::{reader_stream, AsyncReadExt, AsyncWriteExt};
 use tokio::stream::StreamExt;
 use uuid::Uuid;
@@ -163,14 +163,42 @@ pub async fn download<T: AsRef<Path>>(
     meta_url: &str,
     path: T,
     target_path: Option<&Path>,
+    force: bool,
 ) -> CCFSResult<()> {
     // get chunks and merge them into a file
     let file_url = format!("{}/api/files?path={}", meta_url, path.as_ref().display());
-    let file: FileMetadata = get_request_json(c, &file_url).await?;
-    let mut curr_path = target_path.unwrap_or_else(|| Path::new(".")).to_path_buf();
-    for curr_f in file.bfs_iter() {
-        curr_path = curr_path.join(&curr_f.name);
+    let mut file: FileMetadata = get_request_json(c, &file_url).await?;
+    let target_path = target_path
+        .unwrap_or_else(|| Path::new(CURR_DIR))
+        .to_path_buf();
+    let tmp_path = Path::new(CURR_DIR).join(".ccfs_tmp");
+    create_dir_all(&tmp_path)
+        .await
+        .map_err(|source| BaseError::Create {
+            path: tmp_path.clone(),
+            source,
+        })?;
+    let to = target_path.join(file.name);
+    // renaming root item name, to avoid filename conflict
+    file.name = Uuid::new_v4().to_string();
+    let from = tmp_path.join(&file.name);
+    if to.exists() {
+        if !force {
+            return Err(AlreadyExists { path: to.clone() }.build().into());
+        } else if to.is_dir() {
+            remove_dir_all(&to)
+                .await
+                .map_err(|source| BaseError::Remove {
+                    path: to.clone(),
+                    source,
+                })?;
+        }
+    }
+
+    for (curr_f, parent_dir) in file.bfs_iter().zip(file.bfs_paths_iter()) {
+        let curr_dir = tmp_path.join(parent_dir);
         if let FileInfo::Directory { .. } = &curr_f.file_info {
+            let curr_path = curr_dir.join(&curr_f.name);
             create_dir(&curr_path)
                 .await
                 .map_err(|source| BaseError::Create {
@@ -178,9 +206,13 @@ pub async fn download<T: AsRef<Path>>(
                     source,
                 })?;
         } else {
-            download_file(c, meta_url, &curr_f, &curr_path).await?;
+            download_file(c, meta_url, &curr_f, &curr_dir).await?;
         }
     }
+
+    rename(&from, &to)
+        .await
+        .map_err(|source| BaseError::Rename { from, to, source })?;
     Ok(())
 }
 
