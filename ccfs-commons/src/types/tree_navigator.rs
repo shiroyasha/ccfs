@@ -1,5 +1,5 @@
-use crate::FileMetadata;
 use crate::{errors::Error::*, result::CCFSResult};
+use crate::{FileMetadata, CURR_DIR, PREV_DIR, ROOT_DIR};
 
 #[derive(Debug, Clone)]
 pub struct TreeNavigator<'a> {
@@ -37,7 +37,7 @@ impl<'a> TreeNavigator<'a> {
         path.iter()
             .rev()
             .fold(curr.node.name.clone(), |mut acc, p| {
-                if acc != "/" {
+                if acc != ROOT_DIR {
                     acc.push('/');
                 }
                 acc.push_str(p);
@@ -47,8 +47,8 @@ impl<'a> TreeNavigator<'a> {
 
     pub fn move_to(self, next_dir: &'a str) -> CCFSResult<Self> {
         let next = match next_dir {
-            "." => self, // stay in current dir
-            ".." => self.parent(),
+            s if s == CURR_DIR => self,
+            s if s == PREV_DIR => self.parent(),
             _ => self.child(next_dir)?,
         };
         Ok(next)
@@ -124,13 +124,13 @@ mod tests {
     fn navigator_tests() -> CCFSResult<()> {
         let tree = build()?;
         let mut navigator = tree.navigate();
-        assert_eq!(navigator.get_path(), "/");
+        assert_eq!(navigator.get_path(), ROOT_DIR);
         assert!(navigator.parent.is_none());
 
         navigator = navigator.child("dir2")?;
         assert_eq!(navigator.get_path(), "/dir2");
         let parent = navigator.parent.clone();
-        assert_eq!(parent.unwrap().node.name, "/");
+        assert_eq!(parent.unwrap().node.name, ROOT_DIR);
 
         navigator = navigator.child("subdir")?;
         assert_eq!(navigator.get_path(), "/dir2/subdir");
@@ -138,15 +138,18 @@ mod tests {
         assert_eq!(parent.unwrap().node.name, "dir2");
 
         navigator = navigator.parent().parent();
-        assert_eq!(navigator.get_path(), "/");
+        assert_eq!(navigator.get_path(), ROOT_DIR);
 
         navigator = navigator.child("dir1")?;
         assert_eq!(navigator.get_path(), "/dir1");
         let parent = navigator.parent.clone();
-        assert_eq!(parent.unwrap().node.name, "/");
+        assert_eq!(parent.unwrap().node.name, ROOT_DIR);
 
         let res = navigator.child("file.txt");
-        assert_eq!(res.unwrap_err().to_string(), "Path file.txt doesn\'t exist");
+        assert_eq!(
+            res.unwrap_err().to_string(),
+            "Path 'file.txt' doesn't exist"
+        );
         Ok(())
     }
 
@@ -154,7 +157,7 @@ mod tests {
     fn zipper_tests() -> CCFSResult<()> {
         let tree = build()?;
         let mut zipper = tree.zipper();
-        assert_eq!(zipper.node.name, "/");
+        assert_eq!(zipper.node.name, ROOT_DIR);
         assert!(zipper.parent.is_none());
 
         assert_eq!(zipper.node.print_current_dir()?, "dir1\ndir2\nsome.zip");
@@ -162,13 +165,13 @@ mod tests {
         zipper = zipper.child("dir2")?;
         assert_eq!(zipper.node.name, "dir2");
         let parent = zipper.parent.clone();
-        assert_eq!(parent.unwrap().node.name, "/");
+        assert_eq!(parent.unwrap().node.name, ROOT_DIR);
 
         zipper.node.name = "dir3".into();
         zipper = zipper.parent()?;
         assert_eq!(zipper.node.print_current_dir()?, "dir1\ndir3\nsome.zip");
         let res = zipper.child("dir2");
-        assert_eq!(res.unwrap_err().to_string(), "Path dir2 doesn\'t exist");
+        assert_eq!(res.unwrap_err().to_string(), "Path 'dir2' doesn't exist");
 
         Ok(())
     }

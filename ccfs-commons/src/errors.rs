@@ -25,41 +25,41 @@ impl std::fmt::Debug for CCFSResponseError {
 #[derive(Debug, Snafu)]
 #[snafu(visibility = "pub(crate)")]
 pub enum Error {
-    #[snafu(display("Unable to create {}: {}", path.display(), source))]
+    #[snafu(display("Unable to create '{}': {}", path.display(), source))]
     Create {
         source: tokio::io::Error,
         path: PathBuf,
     },
 
-    #[snafu(display("Unable to open {}: {}", path.display(), source))]
+    #[snafu(display("Unable to open '{}': {}", path.display(), source))]
     Open {
         source: tokio::io::Error,
         path: PathBuf,
     },
 
-    #[snafu(display("Unable to read {}: {}", path.display(), source))]
+    #[snafu(display("Unable to read '{}': {}", path.display(), source))]
     Read {
         source: tokio::io::Error,
         path: PathBuf,
     },
 
-    #[snafu(display("Unable to write to {}: {}", path.display(), source))]
+    #[snafu(display("Unable to write to '{}': {}", path.display(), source))]
     Write {
         source: tokio::io::Error,
         path: PathBuf,
     },
 
-    #[snafu(display("Unable to rename from {} to {}: {}", from.display(), to.display(), source))]
+    #[snafu(display("Unable to rename from '{}' to '{}': {}", from.display(), to.display(), source))]
     Rename {
         source: tokio::io::Error,
         from: PathBuf,
         to: PathBuf,
     },
 
-    #[snafu(display("Unable to parse to String: {}", source))]
+    #[snafu(display("Unable to parse to String: '{}'", source))]
     ParseString { source: std::string::FromUtf8Error },
 
-    #[snafu(display("Unable to parse uuid {}: {}", text, source))]
+    #[snafu(display("Unable to parse uuid '{}': {}", text, source))]
     ParseUuid { source: uuid::Error, text: String },
 
     #[snafu(display("Request failed: {}", response))]
@@ -71,10 +71,10 @@ pub enum Error {
         url: String,
     },
 
-    #[snafu(display("{} is not a directory", path.display()))]
+    #[snafu(display("'{}' is not a directory", path.display()))]
     NotADir { path: PathBuf },
 
-    #[snafu(display("Path {} doesn't exist", path.display()))]
+    #[snafu(display("Path '{}' doesn't exist", path.display()))]
     NotExist { path: PathBuf },
 
     #[snafu(display("Invalid path: {}", msg))]
