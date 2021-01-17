@@ -1,8 +1,8 @@
-mod chunk;
-mod chunk_server;
-mod file;
-mod tree_iter;
-mod tree_navigator;
+pub(crate) mod chunk;
+pub(crate) mod chunk_server;
+pub(crate) mod file;
+pub(crate) mod tree_iter;
+pub(crate) mod tree_navigator;
 
 pub use chunk::*;
 pub use chunk_server::*;

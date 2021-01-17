@@ -1,5 +1,5 @@
 use crate::{errors::Error::*, result::CCFSResult};
-use crate::{BFSTreeIter, DFSTreeIter, TreeNavigator, TreeZipper};
+use crate::{BFSTreeIter, DFSTreeIter, TreeNavigator, TreeZipper, ROOT_DIR};
 use chrono::serde::ts_milliseconds;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
@@ -32,7 +32,7 @@ pub struct FileMetadata {
 
 impl FileMetadata {
     pub fn create_root() -> Self {
-        Self::create_dir("/".into())
+        Self::create_dir(ROOT_DIR.into())
     }
 
     pub fn create_dir(name: String) -> Self {
@@ -77,21 +77,23 @@ impl FileMetadata {
         }
     }
 
-    pub fn traverse<'a>(&'a self, target_path: &'a str) -> CCFSResult<&Self> {
+    pub fn traverse<'a>(&'a self, target: &'a str) -> CCFSResult<&Self> {
         let mut curr = self.navigate();
-        if !target_path.is_empty() {
-            for segment in target_path.split_terminator('/') {
+        if !target.is_empty() {
+            let skip = if target.starts_with(ROOT_DIR) { 1 } else { 0 };
+            for segment in target.split_terminator('/').skip(skip) {
                 curr = curr.child(segment)?;
             }
         }
         Ok(curr.node)
     }
 
-    pub fn traverse_mut(&mut self, target_path: &str) -> CCFSResult<&mut Self> {
+    pub fn traverse_mut(&mut self, target: &str) -> CCFSResult<&mut Self> {
         let mut curr = self;
-        if !target_path.is_empty() {
-            let path = PathBuf::from(target_path);
-            for segment in target_path.split_terminator('/') {
+        if !target.is_empty() {
+            let path = PathBuf::from(target);
+            let skip = if target.starts_with(ROOT_DIR) { 1 } else { 0 };
+            for segment in target.split_terminator('/').skip(skip) {
                 match curr.file_info {
                     FileInfo::File { .. } => return Err(NotExist { path: path.clone() }.into()),
                     _ => {
@@ -240,12 +242,12 @@ pub mod tests {
         assert!(matches!(dir1.file_info, FileInfo::Directory { .. }));
         assert_eq!(dir1.name, "dir1");
         assert_eq!(
-            format!("{:?}", dir1.traverse("subdir").unwrap_err()),
-            "NotExist { path: \"subdir\" }"
+            dir1.traverse("subdir").unwrap_err().to_string(),
+            "Path 'subdir' doesn't exist"
         );
         assert_eq!(
-            format!("{:?}", dir1.traverse("dir1/subdir").unwrap_err()),
-            "NotExist { path: \"dir1\" }"
+            dir1.traverse("dir1/subdir").unwrap_err().to_string(),
+            "Path 'dir1' doesn't exist"
         );
         let dir2 = trie.traverse("dir2")?;
         assert!(matches!(dir2.file_info, FileInfo::Directory { .. }));

@@ -19,5 +19,5 @@ dev.run:
 # Runs the CLI environment entrypoint and forwards the command arguments to it.
 #
 dev.cli:
-	./rebuild-dev.sh cli
+	./rebuild-dev.sh
 	docker-compose run cli $(filter-out $@,$(MAKECMDGOALS))
