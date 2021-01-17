@@ -80,7 +80,9 @@ async fn main() -> CCFSResult<()> {
     let client = Client::new();
     match opts.cmd {
         Command::Upload { file_path } => upload(&client, &meta_url, &file_path).await?,
-        Command::Download { file_path } => download(&client, &meta_url, &file_path, None).await?,
+        Command::Download { file_path } => {
+            download(&client, &meta_url, &file_path, None, false).await?
+        }
         Command::Remove { file_path: _path } => unimplemented!(),
         Command::List => list(&client, &meta_url).await?,
         Command::Tree => tree(&client, &meta_url).await?,

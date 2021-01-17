@@ -585,6 +585,7 @@ version = "0.1.0"
 dependencies = [
  "actix-web",
  "ccfs-commons",
+ "dirs",
  "futures",
  "mpart-async",
  "rand 0.8.1",

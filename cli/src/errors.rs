@@ -36,13 +36,16 @@ pub enum Error {
     #[snafu(display("Failed to upload chunk {} for file {}", part, chunk_id))]
     UploadSingleChunk { part: usize, chunk_id: Uuid },
 
-    #[snafu(display("File doesn't exist: {}", path.display()))]
+    #[snafu(display("File doesn't exist: '{}'", path.display()))]
     FileNotExist { path: PathBuf },
 
-    #[snafu(display("{} is a directory", path.display()))]
+    #[snafu(display("'{}' already exist", path.display()))]
+    AlreadyExists { path: PathBuf },
+
+    #[snafu(display("'{}' is a directory", path.display()))]
     NotAFile { path: PathBuf },
 
-    #[snafu(display("Missing config value {}", key))]
+    #[snafu(display("Missing config value '{}'", key))]
     MissingConfigVal { key: String },
 
     #[snafu(display("There are no available servers, try again later"))]
@@ -63,6 +66,7 @@ impl<'a> ResponseError for Error {
             | UploadChunks { .. }
             | UploadSingleChunk { .. }
             | FileNotExist { .. }
+            | AlreadyExists { .. }
             | NotAFile { .. }
             | NoAvailableServers { .. }
             | MissingConfigVal { .. } => ErrorInternalServerError(display).into(),
