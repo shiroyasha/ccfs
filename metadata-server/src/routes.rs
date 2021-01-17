@@ -4,8 +4,9 @@ use crate::errors::*;
 use crate::{ChunkServersMap, ChunksMap, FileMetadataTree, FilesMap};
 use actix_web::{get, post, web, HttpResponse};
 use ccfs_commons::data::Data;
+use ccfs_commons::path::evaluate_path;
 use ccfs_commons::result::CCFSResult;
-use ccfs_commons::{Chunk, ChunkServer, FileInfo, FileMetadata, FileStatus};
+use ccfs_commons::{Chunk, ChunkServer, FileInfo, FileMetadata, FileStatus, ROOT_DIR};
 use chrono::{DateTime, Utc};
 use uuid::Uuid;
 
@@ -54,8 +55,9 @@ pub async fn create_file(
     file_metadata_tree: web::Data<Data<FileMetadataTree>>,
 ) -> CCFSResult<HttpResponse> {
     let file = file_info.into_inner();
-    let path = params.get("path").ok_or_else(|| MissingParam.build())?;
+    let path_val = params.get("path").ok_or_else(|| MissingParam.build())?;
     let mut tree = file_metadata_tree.write().map_err(|_| WriteLock.build())?;
+    let path = evaluate_path(ROOT_DIR, &tree, path_val)?;
     let (dir_path, _) = path.split_at(path.rfind('/').unwrap_or(0));
     let target = tree.traverse_mut(&dir_path).map_err(|_| NotFound.build())?;
     match &file.file_info {
@@ -78,11 +80,12 @@ pub async fn get_file(
     web::Query(params): web::Query<HashMap<String, String>>,
     file_metadata_tree: web::Data<Data<FileMetadataTree>>,
 ) -> CCFSResult<HttpResponse> {
-    let path = match params.get("path") {
+    let path_val = match params.get("path") {
         Some(path) => path.to_owned(),
         None => String::new(),
     };
     let files_tree = file_metadata_tree.read().map_err(|_| ReadLock.build())?;
+    let path = evaluate_path(ROOT_DIR, &files_tree, &path_val)?;
     let files = files_tree.traverse(&path).map_err(|_| NotFound.build())?;
     Ok(HttpResponse::Ok().json(files))
 }
