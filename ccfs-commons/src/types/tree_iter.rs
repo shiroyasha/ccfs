@@ -57,6 +57,7 @@ impl<'a> Iterator for BFSTreeIter<'a> {
     }
 }
 
+/// An iterator that returns the currently visited items parent directory path
 pub struct BFSPathsIter<'a> {
     items: VecDeque<&'a FileMetadata>,
     paths: VecDeque<PathBuf>,
@@ -86,5 +87,58 @@ impl<'a> Iterator for BFSPathsIter<'a> {
             }
             _ => None,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::result::CCFSResult;
+    use crate::types::file::tests::build;
+    use crate::ROOT_DIR;
+
+    #[test]
+    fn dfs_iter_test() -> CCFSResult<()> {
+        let tree = build()?;
+        let mut iter = tree.dfs_iter();
+        assert_eq!(iter.next().unwrap().name, ROOT_DIR);
+        assert_eq!(iter.next().unwrap().name, "some.zip");
+        assert_eq!(iter.next().unwrap().name, "dir2");
+        assert_eq!(iter.next().unwrap().name, "test.txt");
+        assert_eq!(iter.next().unwrap().name, "subdir");
+        assert_eq!(iter.next().unwrap().name, "tmp");
+        assert_eq!(iter.next().unwrap().name, "file");
+        assert_eq!(iter.next().unwrap().name, "dir1");
+        Ok(())
+    }
+
+    #[test]
+    fn bfs_iter_test() -> CCFSResult<()> {
+        let tree = build()?;
+        let mut iter = tree.bfs_iter();
+        assert_eq!(iter.next().unwrap().name, ROOT_DIR);
+        assert_eq!(iter.next().unwrap().name, "dir1");
+        assert_eq!(iter.next().unwrap().name, "dir2");
+        assert_eq!(iter.next().unwrap().name, "some.zip");
+        assert_eq!(iter.next().unwrap().name, "subdir");
+        assert_eq!(iter.next().unwrap().name, "test.txt");
+        assert_eq!(iter.next().unwrap().name, "file");
+        assert_eq!(iter.next().unwrap().name, "tmp");
+        Ok(())
+    }
+
+    #[test]
+    fn bfs_paths_iter_test() -> CCFSResult<()> {
+        let tree = build()?;
+        let mut iter = tree.bfs_paths_iter();
+        assert_eq!(iter.next().unwrap(), PathBuf::from(""));
+        assert_eq!(iter.next().unwrap(), PathBuf::from("/"));
+        assert_eq!(iter.next().unwrap(), PathBuf::from("/"));
+        assert_eq!(iter.next().unwrap(), PathBuf::from("/"));
+        assert_eq!(iter.next().unwrap(), PathBuf::from("/dir2"));
+        assert_eq!(iter.next().unwrap(), PathBuf::from("/dir2"));
+        assert_eq!(iter.next().unwrap(), PathBuf::from("/dir2/subdir"));
+        assert_eq!(iter.next().unwrap(), PathBuf::from("/dir2/subdir"));
+        Ok(())
     }
 }
