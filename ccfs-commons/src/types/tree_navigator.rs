@@ -37,7 +37,6 @@ impl<'a> TreeNavigator<'a> {
         path.iter()
             .rev()
             .fold(curr.node.name.clone(), |mut acc, p| {
-                println!("acc {}", acc);
                 if acc != "/" {
                     acc.push('/');
                 }
