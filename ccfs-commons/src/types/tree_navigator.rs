@@ -147,10 +147,7 @@ mod tests {
         assert_eq!(parent.unwrap().node.name, "/");
 
         let res = navigator.child("file.txt");
-        assert_eq!(
-            format!("{:?}", res.unwrap_err()),
-            "NotExist { path: \"file.txt\" }"
-        );
+        assert_eq!(res.unwrap_err().to_string(), "Path file.txt doesn\'t exist");
         Ok(())
     }
 
@@ -172,10 +169,7 @@ mod tests {
         zipper = zipper.parent()?;
         assert_eq!(zipper.node.print_current_dir()?, "dir1\ndir3\nsome.zip");
         let res = zipper.child("dir2");
-        assert_eq!(
-            format!("{:?}", res.unwrap_err()),
-            "NotExist { path: \"dir2\" }"
-        );
+        assert_eq!(res.unwrap_err().to_string(), "Path dir2 doesn\'t exist");
 
         Ok(())
     }
