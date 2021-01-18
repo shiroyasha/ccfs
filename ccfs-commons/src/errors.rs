@@ -1,8 +1,7 @@
-use std::path::PathBuf;
-
 use actix_web::error::{ErrorBadRequest, ErrorInternalServerError};
 use actix_web::{HttpResponse, ResponseError};
 use snafu::Snafu;
+use std::path::PathBuf;
 
 #[derive(Snafu)]
 #[snafu(display("{}", inner))]

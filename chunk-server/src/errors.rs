@@ -17,6 +17,9 @@ pub enum Error {
 
     #[snafu(display("Missing some headers"))]
     MissingHeader,
+
+    #[snafu(display("Cannot create temp dir"))]
+    TempDir { source: std::io::Error },
 }
 
 impl ResponseError for Error {
@@ -25,7 +28,9 @@ impl ResponseError for Error {
         let display = format!("{}", self);
         match self {
             Base { source } => source.error_response(),
-            MetaServerCommunication { .. } => ErrorInternalServerError(display).into(),
+            MetaServerCommunication { .. } | TempDir { .. } => {
+                ErrorInternalServerError(display).into()
+            }
             MissingPart | MissingHeader => ErrorBadRequest(display).into(),
         }
     }

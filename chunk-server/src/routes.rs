@@ -1,39 +1,30 @@
 use crate::errors::*;
 use crate::{MetadataUrl, ServerID, UploadsDir};
 use actix_multipart::Multipart;
-use actix_web::body::BodyStream;
 use actix_web::http::header::CONTENT_TYPE;
-use actix_web::HttpRequest;
-use actix_web::{client::Client, get, post, web, HttpResponse};
-use ccfs_commons::chunk_name;
+use actix_web::{body::BodyStream, client::Client, get, post, HttpResponse};
+use actix_web::{web::Data, web::Path, HttpRequest};
 use ccfs_commons::http_utils::{get_header, handle_file, handle_string, read_body};
-use ccfs_commons::{data::Data, Chunk};
-use ccfs_commons::{errors::Error as BaseError, result::CCFSResult};
-use fs::{create_dir_all, rename};
+use ccfs_commons::{chunk_name, errors::Error as BaseError, result::CCFSResult, Chunk};
 use futures::TryStreamExt;
 use mpart_async::client::MultipartRequest;
+use snafu::ResultExt;
 use std::collections::HashMap;
+use std::path::PathBuf;
 use std::str::FromStr;
-use tokio::fs::{self, File};
+use tempfile::tempdir;
+use tokio::fs::{rename, File};
 use tokio::io::reader_stream;
 use uuid::Uuid;
 
 #[post("/upload")]
 pub async fn upload(
     mut data: Multipart,
-    meta_url: web::Data<Data<MetadataUrl>>,
-    server: web::Data<Data<ServerID>>,
-    dir: web::Data<Data<UploadsDir>>,
+    meta_url: Data<MetadataUrl>,
+    server: Data<ServerID>,
+    target_dir: Data<UploadsDir>,
 ) -> CCFSResult<HttpResponse> {
-    let path = &dir.join(".tmp");
-    if !path.exists() {
-        create_dir_all(&path)
-            .await
-            .map_err(|source| BaseError::Create {
-                path: path.into(),
-                source,
-            })?;
-    }
+    let temp = tempdir().context(TempDir)?;
     let mut parts: HashMap<String, String> = HashMap::new();
     while let Ok(Some(field)) = data.try_next().await {
         if let Some(content_disposition) = field.content_disposition() {
@@ -43,9 +34,9 @@ pub async fn upload(
                         parts.insert(name.into(), handle_string(field).await?);
                     }
                     "file" => {
-                        let file_path = path.join(Uuid::new_v4().to_string()).display().to_string();
+                        let file_path = temp.path().join(Uuid::new_v4().to_string());
                         handle_file(field, &file_path).await?;
-                        parts.insert(name.into(), file_path);
+                        parts.insert(name.into(), file_path.display().to_string());
                     }
                     _ => {}
                 }
@@ -69,19 +60,15 @@ pub async fn upload(
         source,
     })?;
 
-    let chunk = Chunk::new(id, file_id, server.inner);
-    let from = file_path_str;
-    let to = &dir.join(chunk.chunk_name());
-    rename(&from, to)
+    let chunk = Chunk::new(id, file_id, **server);
+    let from = PathBuf::from(file_path_str);
+    let to = target_dir.join(chunk.chunk_name());
+    rename(&from, &to)
         .await
-        .map_err(|source| BaseError::Rename {
-            from: from.into(),
-            to: to.into(),
-            source,
-        })?;
+        .map_err(|source| BaseError::Rename { from, to, source })?;
 
     let resp = Client::new()
-        .post(&format!("{}/api/chunk/completed", meta_url.inner))
+        .post(&format!("{}/api/chunk/completed", **meta_url))
         .send_json(&chunk)
         .await
         .map_err(|err| {
@@ -89,7 +76,7 @@ pub async fn upload(
             MetaServerCommunication { reason }.build()
         })?;
     match resp.status().is_success() {
-        true => Ok(HttpResponse::Ok().json(chunk)),
+        true => Ok(HttpResponse::NoContent().finish()),
         false => {
             let reason = read_body(resp).await?;
             Err(MetaServerCommunication { reason }.build().into())
@@ -98,10 +85,7 @@ pub async fn upload(
 }
 
 #[get("/download/{chunk_name}")]
-pub async fn download(
-    info: web::Path<String>,
-    dir: web::Data<Data<UploadsDir>>,
-) -> CCFSResult<HttpResponse> {
+pub async fn download(info: Path<String>, dir: Data<UploadsDir>) -> CCFSResult<HttpResponse> {
     let path = dir.join(&info.into_inner());
     let file = File::open(&path)
         .await
@@ -110,10 +94,7 @@ pub async fn download(
 }
 
 #[post("/replicate")]
-pub async fn replicate(
-    request: HttpRequest,
-    dir: web::Data<Data<UploadsDir>>,
-) -> CCFSResult<HttpResponse> {
+pub async fn replicate(request: HttpRequest, dir: Data<UploadsDir>) -> CCFSResult<HttpResponse> {
     let headers = request.headers();
     let chunk_id = get_header(headers, "x-ccfs-chunk-id").ok_or_else(|| MissingHeader.build())?;
     let file_id = get_header(headers, "x-ccfs-file-id").ok_or_else(|| MissingHeader.build())?;
