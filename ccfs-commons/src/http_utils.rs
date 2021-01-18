@@ -6,6 +6,7 @@ use actix_web::dev::{Decompress, Payload};
 use actix_web::http::HeaderMap;
 use futures_util::StreamExt;
 use snafu::ResultExt;
+use std::path::Path;
 use tokio::fs::File;
 use tokio::io::AsyncWriteExt;
 
@@ -27,7 +28,7 @@ pub async fn handle_string(mut data: Field) -> CCFSResult<String> {
     Ok(String::from_utf8(content).context(ParseString)?)
 }
 
-pub async fn handle_file(mut data: Field, path: &str) -> CCFSResult<()> {
+pub async fn handle_file(mut data: Field, path: &Path) -> CCFSResult<()> {
     let mut f = File::create(path).await.context(Create { path })?;
     while let Some(Ok(bytes)) = data.next().await {
         f.write_all(&bytes).await.context(Write { path })?;

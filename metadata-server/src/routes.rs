@@ -124,7 +124,7 @@ pub async fn signal_chuck_upload_completed(
         }
     }
     chunk_set.insert(*chunk);
-    Ok(HttpResponse::Ok().finish())
+    Ok(HttpResponse::NoContent().finish())
 }
 
 /// Returns the list of servers which contain the
