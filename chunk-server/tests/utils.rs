@@ -10,16 +10,18 @@ use std::pin::Pin;
 use tokio::fs::read_dir;
 use tokio::io::reader_stream;
 
+#[allow(dead_code)]
 pub async fn is_empty(path: &Path) -> std::io::Result<bool> {
     Ok(matches!(read_dir(path).await?.next_entry().await?, None))
 }
 
+#[allow(dead_code)]
 pub async fn create_multipart_request(
     url: &'static str,
     chunk_id: Option<String>,
     file_id: Option<String>,
 ) -> Request {
-    let stream = reader_stream("content".as_bytes());
+    let stream = reader_stream("Test file content".as_bytes());
     let mut mpart = MultipartRequest::default();
     if let Some(chunk) = chunk_id {
         mpart.add_field("chunk_id", &chunk);

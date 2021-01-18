@@ -3,11 +3,10 @@ use actix_web::body::BodyStream;
 use actix_web::client::{Client, ClientResponse};
 use actix_web::dev::{Decompress, Payload};
 use actix_web::http::header::CONTENT_TYPE;
-use ccfs_commons::http_utils::read_body;
-use ccfs_commons::{chunk_name, Chunk, ChunkServer, FileInfo, FileMetadata, CHUNK_SIZE, CURR_DIR};
+use ccfs_commons::http_utils::{create_ccfs_multipart, read_body};
 use ccfs_commons::{errors::Error as BaseError, result::CCFSResult};
+use ccfs_commons::{Chunk, ChunkServer, FileInfo, FileMetadata, CHUNK_SIZE, CURR_DIR};
 use futures::future::join_all;
-use mpart_async::client::MultipartRequest;
 use rand::{seq::SliceRandom, thread_rng};
 use serde::{de::DeserializeOwned, Serialize};
 use snafu::ResultExt;
@@ -121,8 +120,6 @@ pub async fn upload_chunk(
     let (file_id, chunk_id, part) = data;
     let file_id_str = file_id.to_string();
     let chunk_id_str = chunk_id.to_string();
-    let chunk_file_name = chunk_name(&file_id_str, &chunk_id_str);
-    let content_type = "application/octet-stream";
     let mut rng = thread_rng();
     for _ in 0..servers.len() {
         let server = servers.choose(&mut rng).expect("servers is empty");
@@ -137,10 +134,7 @@ pub async fn upload_chunk(
                 source,
             })?;
         let stream = reader_stream(f.take(CHUNK_SIZE));
-        let mut mpart = MultipartRequest::default();
-        mpart.add_field("chunk_id", &chunk_id_str);
-        mpart.add_field("file_id", &file_id_str);
-        mpart.add_stream("file", &chunk_file_name, content_type, stream);
+        let mpart = create_ccfs_multipart(&chunk_id_str, &file_id_str, stream);
         let url = format!("{}/api/upload", server.address);
         let resp = c
             .post(&url)

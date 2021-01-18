@@ -1,13 +1,12 @@
 mod utils;
 
 use actix_http::http::StatusCode;
-use actix_web::test;
+use actix_web::test::{call_service, init_service};
 use ccfs_commons::chunk_name;
 use chunk_server::create_app;
 use httpmock::{Method, MockServer};
 use std::str::FromStr;
 use tempfile::tempdir;
-use test::{call_service, init_service};
 use utils::{create_multipart_request, is_empty};
 use uuid::Uuid;
 
@@ -63,7 +62,7 @@ async fn test_meta_fail() -> std::io::Result<()> {
     let mut server = init_service(create_app(meta.base_url(), server_id, temp.path().into())).await;
 
     let req = create_multipart_request("/api/upload", chunk_id.into(), file_id.into()).await;
-    let resp = test::call_service(&mut server, req).await;
+    let resp = call_service(&mut server, req).await;
     upload_mock.assert();
     assert_eq!(resp.status(), StatusCode::INTERNAL_SERVER_ERROR);
 
@@ -90,7 +89,7 @@ async fn test_missing_form_data() -> std::io::Result<()> {
     let mut server = init_service(create_app(meta.base_url(), server_id, temp.path().into())).await;
 
     let req = create_multipart_request("/api/upload", chunk_id.into(), None).await;
-    let resp = test::call_service(&mut server, req).await;
+    let resp = call_service(&mut server, req).await;
     assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
     upload_mock.assert_hits(0);
 
