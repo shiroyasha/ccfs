@@ -13,6 +13,6 @@ tokio = { version = "0.2", features = ["full"] }
 futures-util = "0.3.9"
 serde = { version = "1.0", features = ["derive"] }
 chrono = { version = "0.4.19", features = ["serde"] }
-uuid = { version = "0.8.1", features = ["v4", "serde"] }
+uuid = { version = "0.8.2", features = ["v4", "serde"] }
 snafu = "0.6.10"
 regex = "1.4.3"
