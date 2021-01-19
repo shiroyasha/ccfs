@@ -77,7 +77,7 @@ pub async fn upload(
             MetaServerCommunication { reason }.build()
         })?;
     match resp.status().is_success() {
-        true => Ok(HttpResponse::NoContent().finish()),
+        true => Ok(HttpResponse::Ok().finish()),
         false => {
             let reason = read_body(resp).await?;
             Err(MetaServerCommunication { reason }.build().into())
@@ -124,5 +124,5 @@ pub async fn replicate(request: HttpRequest, dir: Data<UploadsDir>) -> CCFSResul
         let response = read_body(resp).await?;
         return Err(BaseError::Unsuccessful { response }.into());
     }
-    Ok(HttpResponse::NoContent().finish())
+    Ok(HttpResponse::Ok().finish())
 }

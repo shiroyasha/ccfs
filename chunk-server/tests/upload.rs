@@ -33,7 +33,7 @@ async fn test_successful_upload() -> std::io::Result<()> {
     let req = create_multipart_request("/api/upload", chunk_id.into(), file_id.into()).await;
     let resp = call_service(&mut server, req).await;
     upload_mock.assert();
-    assert_eq!(resp.status(), StatusCode::NO_CONTENT);
+    assert_eq!(resp.status(), StatusCode::OK);
 
     assert!(temp.path().join(chunk_file_name).exists());
     Ok(())
