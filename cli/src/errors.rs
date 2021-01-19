@@ -6,7 +6,7 @@ use std::path::PathBuf;
 use uuid::Uuid;
 
 #[derive(Debug, Snafu)]
-#[snafu(visibility = "pub(crate)")]
+#[snafu(visibility = "pub")]
 pub enum Error {
     #[snafu(display("{}", source))]
     Base { source: ccfs_commons::errors::Error },

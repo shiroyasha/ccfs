@@ -1,18 +1,17 @@
-use std::collections::{HashMap, HashSet};
-
-use crate::errors::*;
-use crate::{ChunkServersMap, ChunksMap, FileMetadataTree, FilesMap};
+use crate::{errors::*, ChunksMap, FileMetadataTree, FilesMap, ServersMap};
+use actix_web::web::{Data, Path};
 use actix_web::{get, post, web, HttpResponse};
-use ccfs_commons::data::Data;
 use ccfs_commons::path::evaluate_path;
 use ccfs_commons::result::CCFSResult;
 use ccfs_commons::{Chunk, ChunkServer, FileInfo, FileMetadata, FileStatus, ROOT_DIR};
 use chrono::{DateTime, Utc};
+use std::collections::{HashMap, HashSet};
 use uuid::Uuid;
+use web::{Json, Query};
 
 /// Returns a list of available chunk servers where the file chunks can be uploaded
 #[get("/servers")]
-pub async fn get_servers(servers: web::Data<Data<ChunkServersMap>>) -> CCFSResult<HttpResponse> {
+pub async fn get_servers(servers: Data<ServersMap>) -> CCFSResult<HttpResponse> {
     let servers_map = servers.read().map_err(|_| ReadLock.build())?;
     Ok(HttpResponse::Ok().json(
         servers_map
@@ -25,10 +24,7 @@ pub async fn get_servers(servers: web::Data<Data<ChunkServersMap>>) -> CCFSResul
 
 /// Returns chunk servers data for the server with ID <id>
 #[get("/servers/{id}")]
-pub async fn get_server(
-    id: web::Path<Uuid>,
-    servers: web::Data<Data<ChunkServersMap>>,
-) -> CCFSResult<HttpResponse> {
+pub async fn get_server(id: Path<Uuid>, servers: Data<ServersMap>) -> CCFSResult<HttpResponse> {
     let servers_map = servers.read().map_err(|_| ReadLock.build())?;
     let server = servers_map.get(&id).ok_or_else(|| NotFound.build())?;
     Ok(HttpResponse::Ok().json(server))
@@ -38,7 +34,7 @@ pub async fn get_server(
 #[post("/ping")]
 pub async fn chunk_server_ping(
     payload: ChunkServer,
-    servers: web::Data<Data<ChunkServersMap>>,
+    servers: Data<ServersMap>,
 ) -> CCFSResult<HttpResponse> {
     let mut servers_map = servers.write().map_err(|_| WriteLock.build())?;
     let server = servers_map.entry(payload.id).or_insert_with(|| payload);
@@ -49,10 +45,10 @@ pub async fn chunk_server_ping(
 /// Creates a file entity with basic file info
 #[post("/files/upload")]
 pub async fn create_file(
-    file_info: web::Json<FileMetadata>,
-    web::Query(params): web::Query<HashMap<String, String>>,
-    files: web::Data<Data<FilesMap>>,
-    file_metadata_tree: web::Data<Data<FileMetadataTree>>,
+    file_info: Json<FileMetadata>,
+    Query(params): Query<HashMap<String, String>>,
+    files: Data<FilesMap>,
+    file_metadata_tree: Data<FileMetadataTree>,
 ) -> CCFSResult<HttpResponse> {
     let file = file_info.into_inner();
     let mut tree = file_metadata_tree.write().map_err(|_| WriteLock.build())?;
@@ -78,8 +74,8 @@ pub async fn create_file(
 /// Returns the file info
 #[get("/files")]
 pub async fn get_file(
-    web::Query(params): web::Query<HashMap<String, String>>,
-    file_metadata_tree: web::Data<Data<FileMetadataTree>>,
+    Query(params): Query<HashMap<String, String>>,
+    file_metadata_tree: Data<FileMetadataTree>,
 ) -> CCFSResult<HttpResponse> {
     let files_tree = file_metadata_tree.read().map_err(|_| ReadLock.build())?;
     let path = match params.get("path") {
@@ -93,10 +89,10 @@ pub async fn get_file(
 /// Notifies the metadata server to mark the chunk as completed
 #[post("/chunk/completed")]
 pub async fn signal_chuck_upload_completed(
-    chunk: web::Json<Chunk>,
-    file_metadata_tree: web::Data<Data<FileMetadataTree>>,
-    files: web::Data<Data<FilesMap>>,
-    chunks: web::Data<Data<ChunksMap>>,
+    chunk: Json<Chunk>,
+    file_metadata_tree: Data<FileMetadataTree>,
+    files: Data<FilesMap>,
+    chunks: Data<ChunksMap>,
 ) -> CCFSResult<HttpResponse> {
     let mut chunks = chunks.write().map_err(|_| WriteLock.build())?;
     let mut files = files.write().map_err(|_| WriteLock.build())?;
@@ -130,10 +126,7 @@ pub async fn signal_chuck_upload_completed(
 /// Returns the list of servers which contain the
 /// uploaded chunks for a file
 #[get("/chunks/file/{file_id}")]
-pub async fn get_chunks(
-    file_id: web::Path<Uuid>,
-    chunks: web::Data<Data<ChunksMap>>,
-) -> CCFSResult<HttpResponse> {
+pub async fn get_chunks(file_id: Path<Uuid>, chunks: Data<ChunksMap>) -> CCFSResult<HttpResponse> {
     let chunks_map = chunks.read().map_err(|_| ReadLock.build())?;
     Ok(HttpResponse::Ok().json(
         chunks_map

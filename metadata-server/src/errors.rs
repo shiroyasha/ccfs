@@ -4,7 +4,7 @@ use ccfs_commons::errors::CCFSResponseError;
 use snafu::Snafu;
 
 #[derive(Debug, Snafu)]
-#[snafu(visibility = "pub(crate)")]
+#[snafu(visibility = "pub")]
 pub enum Error {
     #[snafu(display("{}", source))]
     Base { source: ccfs_commons::errors::Error },

@@ -1707,12 +1707,17 @@ checksum = "0ee1c47aaa256ecabcaea351eae4a9b01ef39ed810004e298d2511ed284b1525"
 name = "metadata-server"
 version = "0.1.0"
 dependencies = [
+ "actix-http",
+ "actix-rt",
+ "actix-service",
  "actix-web",
  "bincode",
  "ccfs-commons",
  "chrono",
  "dirs 3.0.1",
  "futures",
+ "futures-util",
+ "httpmock",
  "serde",
  "snafu",
  "tokio 0.2.24",
