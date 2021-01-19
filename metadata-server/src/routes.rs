@@ -1,7 +1,6 @@
 use std::collections::{HashMap, HashSet};
 
-use crate::errors::*;
-use crate::{ChunkServersMap, ChunksMap, FileMetadataTree, FilesMap};
+use crate::{errors::*, ChunkServersMap, ChunksMap, FileMetadataTree, FilesMap};
 use actix_web::{get, post, web, HttpResponse};
 use ccfs_commons::data::Data;
 use ccfs_commons::path::evaluate_path;

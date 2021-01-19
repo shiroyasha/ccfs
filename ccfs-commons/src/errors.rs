@@ -22,7 +22,7 @@ impl std::fmt::Debug for CCFSResponseError {
 }
 
 #[derive(Debug, Snafu)]
-#[snafu(visibility = "pub(crate)")]
+#[snafu(visibility = "pub")]
 pub enum Error {
     #[snafu(display("Unable to create '{}': {}", path.display(), source))]
     Create {
