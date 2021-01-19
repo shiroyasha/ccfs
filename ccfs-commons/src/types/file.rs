@@ -77,6 +77,15 @@ impl FileMetadata {
         }
     }
 
+    pub fn chunks(&self) -> CCFSResult<&Vec<Uuid>> {
+        if let FileInfo::File { ref chunks, .. } = self.file_info {
+            Ok(chunks)
+        } else {
+            let path = PathBuf::from(&self.name);
+            Err(NotAFile { path }.into())
+        }
+    }
+
     pub fn traverse<'a>(&'a self, target: &'a str) -> CCFSResult<&Self> {
         let mut curr = self.navigate();
         if !target.is_empty() {

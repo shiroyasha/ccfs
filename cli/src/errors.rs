@@ -42,9 +42,6 @@ pub enum Error {
     #[snafu(display("'{}' already exist", path.display()))]
     AlreadyExists { path: PathBuf },
 
-    #[snafu(display("'{}' is a directory", path.display()))]
-    NotAFile { path: PathBuf },
-
     #[snafu(display("Missing config value '{}'", key))]
     MissingConfigVal { key: String },
 
@@ -67,7 +64,6 @@ impl<'a> ResponseError for Error {
             | UploadSingleChunk { .. }
             | FileNotExist { .. }
             | AlreadyExists { .. }
-            | NotAFile { .. }
             | NoAvailableServers { .. }
             | MissingConfigVal { .. } => ErrorInternalServerError(display).into(),
         }
