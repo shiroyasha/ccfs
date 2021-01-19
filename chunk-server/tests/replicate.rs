@@ -43,7 +43,7 @@ async fn test_successful_replication() -> std::io::Result<()> {
         .to_request();
     let resp = call_service(&mut server, req).await;
     upload_mock.assert();
-    assert_eq!(resp.status(), StatusCode::NO_CONTENT);
+    assert_eq!(resp.status(), StatusCode::OK);
     Ok(())
 }
 

@@ -39,7 +39,7 @@ pub async fn chunk_server_ping(
     let mut servers_map = servers.write().map_err(|_| WriteLock.build())?;
     let server = servers_map.entry(payload.id).or_insert_with(|| payload);
     server.latest_ping_time = DateTime::from_utc(Utc::now().naive_utc(), Utc);
-    Ok(HttpResponse::Ok().json(server))
+    Ok(HttpResponse::Ok().finish())
 }
 
 /// Creates a file entity with basic file info
@@ -120,7 +120,7 @@ pub async fn signal_chuck_upload_completed(
         }
     }
     chunk_set.insert(*chunk);
-    Ok(HttpResponse::NoContent().finish())
+    Ok(HttpResponse::Ok().finish())
 }
 
 /// Returns the list of servers which contain the
