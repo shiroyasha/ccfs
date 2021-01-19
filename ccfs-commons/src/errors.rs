@@ -99,10 +99,11 @@ impl ResponseError for Error {
             | Remove { .. }
             | NotADir { .. }
             | NotExist { .. }
-            | InvalidPath { .. }
             | FailedRequest { .. }
             | Unsuccessful { .. } => ErrorInternalServerError(display).into(),
-            ParseString { .. } | ParseUuid { .. } => ErrorBadRequest(display).into(),
+            InvalidPath { .. } | ParseString { .. } | ParseUuid { .. } => {
+                ErrorBadRequest(display).into()
+            }
         }
     }
 }

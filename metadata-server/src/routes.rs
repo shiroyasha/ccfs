@@ -82,7 +82,7 @@ pub async fn get_file(
         Some(path) if !path.is_empty() => evaluate_path(ROOT_DIR, &files_tree, path)?,
         _ => String::new(),
     };
-    let files = files_tree.traverse(&path).map_err(|_| NotFound.build())?;
+    let files = files_tree.traverse(&path)?;
     Ok(HttpResponse::Ok().json(files))
 }
 

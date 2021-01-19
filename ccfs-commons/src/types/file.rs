@@ -1,6 +1,6 @@
 use crate::{errors::Error::*, result::CCFSResult};
 use crate::{BFSPathsIter, BFSTreeIter, DFSTreeIter, TreeNavigator, TreeZipper, ROOT_DIR};
-use chrono::serde::ts_milliseconds;
+use chrono::serde::ts_nanoseconds;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
@@ -24,9 +24,9 @@ pub struct FileMetadata {
     pub name: String,
     pub file_info: FileInfo,
     pub version: usize,
-    #[serde(with = "ts_milliseconds")]
+    #[serde(with = "ts_nanoseconds")]
     pub created_at: DateTime<Utc>,
-    #[serde(with = "ts_milliseconds")]
+    #[serde(with = "ts_nanoseconds")]
     pub modified_at: DateTime<Utc>,
 }
 
