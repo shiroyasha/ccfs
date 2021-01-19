@@ -8,7 +8,7 @@ use serde::{Deserialize, Serialize};
 use std::str::FromStr;
 use uuid::Uuid;
 
-#[derive(Clone, Serialize, Deserialize, Debug)]
+#[derive(Clone, Serialize, Deserialize, Debug, PartialEq, Eq)]
 pub struct ChunkServer {
     pub id: Uuid,
     pub address: String,
@@ -25,7 +25,7 @@ impl ChunkServer {
     }
 
     pub fn is_active(&self) -> bool {
-        self.latest_ping_time.signed_duration_since(Utc::now()) <= Duration::seconds(6)
+        Utc::now().signed_duration_since(self.latest_ping_time) <= Duration::seconds(6)
     }
 }
 

@@ -1,5 +1,5 @@
 use crate::{errors::*, FileMetadataTree};
-use crate::{ChunkServersMap, ChunksMap};
+use crate::{ChunksMap, ServersMap};
 use actix_web::client::Client;
 use ccfs_commons::result::CCFSResult;
 use ccfs_commons::{Chunk, ChunkServer, FileInfo, FileMetadata};
@@ -8,11 +8,7 @@ use std::collections::{HashMap, HashSet};
 use tokio::time::{delay_for, Duration};
 use uuid::Uuid;
 
-pub async fn start_replication_job(
-    tree: FileMetadataTree,
-    chunks: ChunksMap,
-    servers: ChunkServersMap,
-) {
+pub async fn start_replication_job(tree: FileMetadataTree, chunks: ChunksMap, servers: ServersMap) {
     loop {
         delay_for(Duration::from_secs(20)).await;
         if let Err(err) = replicate_files(tree.clone(), chunks.clone(), servers.clone(), 3).await {
@@ -27,7 +23,7 @@ pub async fn start_replication_job(
 fn replicate_files(
     tree: FileMetadataTree,
     chunks_map: ChunksMap,
-    servers_map: ChunkServersMap,
+    servers_map: ServersMap,
     required_replicas: usize,
 ) -> LocalBoxFuture<'static, CCFSResult<()>> {
     let c = Client::new();

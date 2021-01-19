@@ -13,16 +13,16 @@ use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, RwLock};
 use uuid::Uuid;
 
-pub type ChunkServersMap = Arc<RwLock<HashMap<Uuid, ChunkServer>>>;
+pub type ServersMap = Arc<RwLock<HashMap<Uuid, ChunkServer>>>;
 pub type ChunksMap = Arc<RwLock<HashMap<Uuid, HashSet<Chunk>>>>;
 pub type FilesMap = Arc<RwLock<HashMap<Uuid, (String, FileMetadata)>>>;
 pub type FileMetadataTree = Arc<RwLock<FileMetadata>>;
 
 pub fn create_app(
-    chunk_servers: ChunkServersMap,
+    servers: ServersMap,
     chunks: ChunksMap,
     files: FilesMap,
-    file_metadata_tree: FileMetadataTree,
+    metadata_tree: FileMetadataTree,
 ) -> App<
     impl ServiceFactory<
         Config = (),
@@ -34,10 +34,10 @@ pub fn create_app(
     dev::Body,
 > {
     App::new()
-        .data(chunk_servers)
+        .data(servers)
         .data(chunks)
         .data(files)
-        .data(file_metadata_tree)
+        .data(metadata_tree)
         .service(
             web::scope("/api")
                 .service(get_servers)

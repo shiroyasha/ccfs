@@ -1708,6 +1708,7 @@ name = "metadata-server"
 version = "0.1.0"
 dependencies = [
  "actix-http",
+ "actix-rt",
  "actix-service",
  "actix-web",
  "bincode",
@@ -1715,6 +1716,8 @@ dependencies = [
  "chrono",
  "dirs 3.0.1",
  "futures",
+ "futures-util",
+ "httpmock",
  "serde",
  "snafu",
  "tokio 0.2.24",
