@@ -57,7 +57,10 @@ async fn main() -> CCFSResult<()> {
         return Err(FileNotExist { path }.build().into());
     }
     if path.is_dir() {
-        return Err(NotAFile { path }.build().into());
+        return Err(BaseError::NotAFile {
+            path: path.to_path_buf(),
+        }
+        .into());
     }
 
     let mut config_file = File::open(path).await.map_err(|source| BaseError::Open {

@@ -79,6 +79,9 @@ pub enum Error {
     #[snafu(display("'{}' is not a directory", path.display()))]
     NotADir { path: PathBuf },
 
+    #[snafu(display("'{}' is a directory", path.display()))]
+    NotAFile { path: PathBuf },
+
     #[snafu(display("Path '{}' doesn't exist", path.display()))]
     NotExist { path: PathBuf },
 
@@ -98,6 +101,7 @@ impl ResponseError for Error {
             | Rename { .. }
             | Remove { .. }
             | NotADir { .. }
+            | NotAFile { .. }
             | NotExist { .. }
             | FailedRequest { .. }
             | Unsuccessful { .. } => ErrorInternalServerError(display).into(),

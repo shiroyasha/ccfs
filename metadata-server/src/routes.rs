@@ -123,18 +123,22 @@ pub async fn signal_chuck_upload_completed(
     Ok(HttpResponse::Ok().finish())
 }
 
-/// Returns the list of servers which contain the
+/// Returns the list of servers which contains the
 /// uploaded chunks for a file
 #[get("/chunks/file/{file_id}")]
-pub async fn get_chunks(file_id: Path<Uuid>, chunks: Data<ChunksMap>) -> CCFSResult<HttpResponse> {
+pub async fn get_chunks(
+    file_id: Path<Uuid>,
+    chunks: Data<ChunksMap>,
+    files: Data<FilesMap>,
+) -> CCFSResult<HttpResponse> {
     let chunks_map = chunks.read().map_err(|_| ReadLock.build())?;
+    let files_map = files.read().map_err(|_| ReadLock.build())?;
+    let (_, file) = files_map.get(&file_id).ok_or_else(|| NotFound.build())?;
     Ok(HttpResponse::Ok().json(
-        chunks_map
-            .values()
-            .filter_map(|chs| match chs.iter().next() {
-                Some(c) if c.file_id == *file_id => Some(chs.iter().cloned().collect()),
-                _ => None,
-            })
+        file.chunks()?
+            .iter()
+            .filter_map(|chunk_id| chunks_map.get(chunk_id))
+            .map(|set| set.iter().cloned().collect())
             .collect::<Vec<Vec<Chunk>>>(),
     ))
 }
