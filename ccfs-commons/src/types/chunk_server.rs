@@ -1,7 +1,7 @@
 use actix_web::dev::Payload;
 use actix_web::error::ErrorBadRequest;
 use actix_web::{Error as ReqError, FromRequest, HttpRequest};
-use chrono::serde::ts_milliseconds;
+use chrono::serde::ts_nanoseconds;
 use chrono::{DateTime, Duration, Utc};
 use futures_util::future::{err, ok, Ready};
 use serde::{Deserialize, Serialize};
@@ -12,7 +12,7 @@ use uuid::Uuid;
 pub struct ChunkServer {
     pub id: Uuid,
     pub address: String,
-    #[serde(with = "ts_milliseconds")]
+    #[serde(with = "ts_nanoseconds")]
     pub latest_ping_time: DateTime<Utc>,
 }
 impl ChunkServer {
