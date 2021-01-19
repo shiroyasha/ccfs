@@ -1,3 +1,4 @@
+use actix_http::http::StatusCode;
 use actix_web::test;
 use ccfs_commons::{ChunkServer, FileMetadata};
 use chrono::{Duration, Utc};
@@ -5,7 +6,7 @@ use metadata_server::create_app;
 use std::collections::HashMap;
 use std::str::FromStr;
 use std::sync::{Arc, RwLock};
-use test::{init_service, read_response_json, TestRequest};
+use test::{call_service, init_service, read_response_json, TestRequest};
 use uuid::Uuid;
 
 #[actix_rt::test]
@@ -56,8 +57,8 @@ async fn test_get_single_server_missing() -> std::io::Result<()> {
     let req = TestRequest::get()
         .uri("/api/servers/1a6e7006-12a7-4935-b8c0-58fa7ea84b09")
         .to_request();
-    let data: Vec<ChunkServer> = read_response_json(&mut server, req).await;
-    assert!(data.is_empty());
+    let resp = call_service(&mut server, req).await;
+    assert_eq!(resp.status(), StatusCode::INTERNAL_SERVER_ERROR);
     Ok(())
 }
 
