@@ -17,3 +17,4 @@ chrono = { version = "0.4.19", features = ["serde"] }
 uuid = { version = "0.8.2", features = ["v4", "serde"] }
 snafu = "0.6.10"
 regex = "1.4.3"
+snafu-cli-debug = "0.1.1"

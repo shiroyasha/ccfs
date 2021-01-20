@@ -3,15 +3,13 @@ mod file_ops;
 
 use actix_web::client::Client;
 use ccfs_commons::errors::{CCFSResponseError, Error as BaseError};
-use ccfs_commons::result::CCFSResult;
 use errors::*;
 use file_ops::{download, list, tree, upload};
 use snafu::ResultExt;
 use std::collections::HashMap;
-use std::path::Path;
+use std::path::PathBuf;
 use structopt::StructOpt;
-use tokio::fs::File;
-use tokio::io::AsyncReadExt;
+use tokio::fs::read_to_string;
 
 #[derive(Debug, StructOpt)]
 /// Chop-Chop File System
@@ -50,30 +48,19 @@ enum Command {
 }
 
 #[actix_web::main]
-async fn main() -> CCFSResult<()> {
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let opts = CliOpts::from_args();
-    let path = Path::new(&opts.config);
+    let path = PathBuf::from(&opts.config);
     if !path.exists() {
         return Err(FileNotExist { path }.build().into());
     }
     if path.is_dir() {
-        return Err(BaseError::NotAFile {
-            path: path.to_path_buf(),
-        }
-        .into());
+        return Err(BaseError::NotAFile { path }.into());
     }
 
-    let mut config_file = File::open(path).await.map_err(|source| BaseError::Open {
-        path: path.into(),
-        source,
-    })?;
-    let mut content = String::new();
-    File::read_to_string(&mut config_file, &mut content)
+    let content = read_to_string(&path)
         .await
-        .map_err(|source| BaseError::Read {
-            path: path.into(),
-            source,
-        })?;
+        .map_err(|source| BaseError::Read { path, source })?;
     let config_map: HashMap<String, String> = serde_yaml::from_str(&content).context(ParseYaml)?;
     let key = "metadata-server-url";
     let meta_url = config_map
