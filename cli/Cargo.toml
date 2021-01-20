@@ -22,3 +22,11 @@ slice-group-by = "0.2.6"
 futures = "0.3.12"
 rand = "0.8.2"
 dirs = "3.0.1"
+
+[dev-dependencies]
+assert_cmd = "1.0.2"
+predicates = "1.0.6"
+httpmock = "0.5.4"
+actix-rt = "1.1.1"
+futures-util = "0.3.12"
+tempfile = "3.2.0"

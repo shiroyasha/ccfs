@@ -1,0 +1,15 @@
+{
+    "created_at": 1611168873307974000,
+    "file_info": {
+        "File": {
+            "chunks": ["9413f6e4-4e8d-4e14-ac9c-be83644a7eb4"],
+            "id": "3bd90efd-1736-419e-9640-dbe9e6f8ee5c",
+            "num_of_completed_chunks": 0,
+            "size": 17,
+            "status": "Started"
+        }
+    },
+    "modified_at": 1611168873307974000,
+    "name": "test.txt",
+    "version": 1
+}

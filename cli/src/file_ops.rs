@@ -37,11 +37,8 @@ pub async fn upload<T: AsRef<Path>>(c: &Client, meta_url: &str, file_path: T) ->
     if !path.exists() {
         return Err(FileNotExist { path }.build().into());
     }
-    let path_prefix = path
-        .ancestors()
-        .nth(1)
-        .map(|p| p.to_path_buf())
-        .unwrap_or_default();
+    let is_dir = path.is_dir();
+    let path_prefix = path.parent().map(|p| p.to_path_buf()).unwrap_or_default();
     let mut paths = vec![path];
     while let Some(curr) = paths.pop() {
         upload_item(c, meta_url, curr.as_path(), &path_prefix).await?;
@@ -53,6 +50,10 @@ pub async fn upload<T: AsRef<Path>>(c: &Client, meta_url: &str, file_path: T) ->
                     .map(|item| item.path()),
             );
         }
+    }
+    match is_dir {
+        true => println!("Completed directory upload"),
+        false => println!("Completed file upload"),
     }
     Ok(())
 }
@@ -72,7 +73,7 @@ pub async fn upload_item(c: &Client, meta_url: &str, path: &Path, prefix: &Path)
         }
     };
     let relative_path = path.strip_prefix(prefix).unwrap();
-    let target_dir = relative_path.ancestors().nth(1).unwrap().display();
+    let target_dir = relative_path.parent().unwrap().display();
     let upload_url = format!("{}/api/files/upload?path={}", meta_url, target_dir);
     let mut resp = post_request(c, &upload_url, file_data).await?;
     let file: FileMetadata = resp.json().await.context(ParseJson)?;
@@ -107,7 +108,6 @@ pub async fn upload_file(
     if responses.iter().filter(|resp| resp.is_err()).size_hint().0 > 0 {
         return Err(UploadChunks.build().into());
     }
-    println!("Completed file upload");
     Ok(())
 }
 
@@ -302,11 +302,19 @@ async fn get_request_json<T: DeserializeOwned>(c: &Client, url: &str) -> CCFSRes
 }
 
 async fn post_request<T: Serialize>(c: &Client, url: &str, data: T) -> CCFSResult<Response> {
-    Ok(c.post(url)
+    let resp = c
+        .post(url)
         .send_json(&data)
         .await
         .map_err(|source| BaseError::FailedRequest {
             url: url.into(),
             source,
-        })?)
+        })?;
+    match resp.status().is_success() {
+        true => Ok(resp),
+        false => Err(BaseError::Unsuccessful {
+            response: read_body(resp).await?,
+        }
+        .into()),
+    }
 }
