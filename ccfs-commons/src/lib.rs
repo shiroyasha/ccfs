@@ -3,6 +3,7 @@ pub mod errors;
 pub mod http_utils;
 pub mod path;
 pub mod result;
+pub mod test_utils;
 
 mod types;
 pub use types::*;

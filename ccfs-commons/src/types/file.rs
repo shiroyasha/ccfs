@@ -217,41 +217,43 @@ impl FileInfo {
 
 #[cfg(test)]
 pub mod tests {
+    use crate::test_utils::{add_dir2, build_tree};
+
     use super::*;
     use std::str::FromStr;
 
     #[test]
-    fn trie_insert_test() -> CCFSResult<()> {
-        let mut trie = FileMetadata::create_root();
-        trie.insert_dir("dir1")?;
-        assert_eq!(trie.children()?.len(), 1);
-        assert_eq!(trie.children()?.get("dir1").unwrap().name, "dir1");
-        trie.insert_dir("dir2")?;
+    fn tree_insert_test() -> CCFSResult<()> {
+        let mut tree = FileMetadata::create_root();
+        tree.insert_dir("dir1")?;
+        assert_eq!(tree.children()?.len(), 1);
+        assert_eq!(tree.children()?.get("dir1").unwrap().name, "dir1");
+        tree.insert_dir("dir2")?;
 
-        assert_eq!(trie.children()?.len(), 2);
-        assert_eq!(trie.children()?.get("dir2").unwrap().name, "dir2");
-        trie.insert_file(
+        assert_eq!(tree.children()?.len(), 2);
+        assert_eq!(tree.children()?.get("dir2").unwrap().name, "dir2");
+        tree.insert_file(
             "some.zip",
             20,
             vec![Uuid::from_str("ec73d743-050b-4f52-992a-d1102340d739").unwrap()],
         )?;
-        assert_eq!(trie.children()?.len(), 3);
-        let file = &trie.children()?.get("some.zip").unwrap();
+        assert_eq!(tree.children()?.len(), 3);
+        let file = &tree.children()?.get("some.zip").unwrap();
         assert!(matches!(file.file_info, FileInfo::File { size: 20, .. }));
         Ok(())
     }
 
     #[test]
-    fn trie_traverse_test() -> CCFSResult<()> {
-        let mut trie = FileMetadata::create_root();
-        trie.insert_dir("dir1")?;
-        trie.insert_dir("dir2")?;
-        trie.insert_file(
+    fn tree_traverse_test() -> CCFSResult<()> {
+        let mut tree = FileMetadata::create_root();
+        tree.insert_dir("dir1")?;
+        tree.insert_dir("dir2")?;
+        tree.insert_file(
             "some.zip",
             20,
             vec![Uuid::from_str("ec73d743-050b-4f52-992a-d1102340d739").unwrap()],
         )?;
-        let dir1 = trie.traverse("dir1")?;
+        let dir1 = tree.traverse("dir1")?;
         assert!(matches!(dir1.file_info, FileInfo::Directory { .. }));
         assert_eq!(dir1.name, "dir1");
         assert_eq!(
@@ -262,76 +264,44 @@ pub mod tests {
             dir1.traverse("dir1/subdir").unwrap_err().to_string(),
             "Path 'dir1' doesn't exist"
         );
-        let dir2 = trie.traverse("dir2")?;
+        let dir2 = tree.traverse("dir2")?;
         assert!(matches!(dir2.file_info, FileInfo::Directory { .. }));
         assert_eq!(dir2.name, "dir2");
-        let file = trie.traverse("some.zip")?;
+        let file = tree.traverse("some.zip")?;
         assert!(matches!(file.file_info, FileInfo::File { .. }));
         assert_eq!(file.name, "some.zip");
 
         Ok(())
     }
 
-    pub fn add_dir2(trie: &mut FileMetadata) -> CCFSResult<()> {
-        trie.insert_dir("dir2")?;
-        let dir2 = trie.traverse_mut("dir2")?;
-        dir2.insert_file(
-            "test.txt",
-            10,
-            vec![Uuid::from_str("1a6e7006-12a7-4935-b8c0-58fa7ea84b09").unwrap()],
-        )?;
-        dir2.insert_dir("subdir")?;
-        let subdir = dir2.traverse_mut("subdir")?;
-        subdir.insert_dir("tmp")?;
-        subdir.insert_file(
-            "file",
-            100,
-            vec![Uuid::from_str("6d53a85f-505b-4a1a-ae6d-f7c18761d04a").unwrap()],
-        )?;
-        Ok(())
-    }
-
-    pub fn build() -> CCFSResult<FileMetadata> {
-        let mut trie = FileMetadata::create_root();
-        trie.insert_dir("dir1")?;
-        add_dir2(&mut trie)?;
-        trie.insert_file(
-            "some.zip",
-            0,
-            vec![Uuid::from_str("ec73d743-050b-4f52-992a-d1102340d739").unwrap()],
-        )?;
-
-        Ok(trie)
-    }
-
     #[test]
-    fn trie_print_subtree_test() -> CCFSResult<()> {
-        let trie = build()?;
+    fn tree_print_subtree_test() -> CCFSResult<()> {
+        let tree = build_tree()?;
         let expected = std::fs::read_to_string("expected-tree.txt").unwrap();
-        assert_eq!(trie.print_subtree(), expected);
+        assert_eq!(tree.print_subtree(), expected);
         Ok(())
     }
 
     #[test]
-    fn trie_print_single_dir_subtree_test() -> CCFSResult<()> {
-        let mut trie = FileMetadata::create_root();
-        add_dir2(&mut trie)?;
+    fn tree_print_single_dir_subtree_test() -> CCFSResult<()> {
+        let mut tree = FileMetadata::create_root();
+        add_dir2(&mut tree)?;
         let expected = std::fs::read_to_string("expected-single-dir-tree.txt").unwrap();
-        assert_eq!(trie.print_subtree(), expected);
+        assert_eq!(tree.print_subtree(), expected);
         Ok(())
     }
 
     #[test]
-    fn trie_print_current_dir_test() -> CCFSResult<()> {
-        let trie = build()?;
-        assert_eq!(trie.print_current_dir()?, "dir1\ndir2\nsome.zip");
-        assert_eq!(trie.traverse("dir1")?.print_current_dir()?, "");
+    fn tree_print_current_dir_test() -> CCFSResult<()> {
+        let tree = build_tree()?;
+        assert_eq!(tree.print_current_dir()?, "dir1\ndir2\nsome.zip");
+        assert_eq!(tree.traverse("dir1")?.print_current_dir()?, "");
         assert_eq!(
-            trie.traverse("dir2")?.print_current_dir()?,
+            tree.traverse("dir2")?.print_current_dir()?,
             "subdir\ntest.txt"
         );
         assert_eq!(
-            trie.traverse("dir2/subdir")?.print_current_dir()?,
+            tree.traverse("dir2/subdir")?.print_current_dir()?,
             "file\ntmp"
         );
         Ok(())

@@ -3,6 +3,33 @@ use std::path::PathBuf;
 
 use crate::{FileInfo, FileMetadata};
 
+///
+/// Example:
+/// // /
+/// // ├─ dir1
+/// // ├─ dir2
+/// // │  ├─ subdir
+/// // │  │  ├─ file
+/// // │  │  └─ tmp
+/// // │  └─ test.txt
+/// // └─ some.zip
+/// ```
+/// use ccfs_commons::result::CCFSResult;
+/// use ccfs_commons::test_utils::build_tree;
+/// fn main() -> CCFSResult<()> {
+///     let tree = build_tree()?;
+///     let mut iter = tree.dfs_iter();
+///     assert_eq!(iter.next().unwrap().name, "/");
+///     assert_eq!(iter.next().unwrap().name, "dir1");
+///     assert_eq!(iter.next().unwrap().name, "dir2");
+///     assert_eq!(iter.next().unwrap().name, "subdir");
+///     assert_eq!(iter.next().unwrap().name, "file");
+///     assert_eq!(iter.next().unwrap().name, "tmp");
+///     assert_eq!(iter.next().unwrap().name, "test.txt");
+///     assert_eq!(iter.next().unwrap().name, "some.zip");
+///     Ok(())
+/// }
+/// ```
 pub struct DFSTreeIter<'a> {
     items: Vec<&'a FileMetadata>,
 }
@@ -20,7 +47,7 @@ impl<'a> Iterator for DFSTreeIter<'a> {
         match self.items.pop() {
             Some(item) => {
                 if let FileInfo::Directory { ref children } = item.file_info {
-                    self.items.extend(children.values());
+                    self.items.extend(children.values().rev());
                 }
                 Some(&item)
             }
@@ -29,6 +56,33 @@ impl<'a> Iterator for DFSTreeIter<'a> {
     }
 }
 
+///
+/// Example:
+/// // /
+/// // ├─ dir1
+/// // ├─ dir2
+/// // │  ├─ subdir
+/// // │  │  ├─ file
+/// // │  │  └─ tmp
+/// // │  └─ test.txt
+/// // └─ some.zip
+/// ```
+/// use ccfs_commons::result::CCFSResult;
+/// use ccfs_commons::test_utils::build_tree;
+/// fn bfs_iter_test() -> CCFSResult<()> {
+///     let tree = build_tree()?;
+///     let mut iter = tree.bfs_iter();
+///     assert_eq!(iter.next().unwrap().name, "/");
+///     assert_eq!(iter.next().unwrap().name, "dir1");
+///     assert_eq!(iter.next().unwrap().name, "dir2");
+///     assert_eq!(iter.next().unwrap().name, "some.zip");
+///     assert_eq!(iter.next().unwrap().name, "subdir");
+///     assert_eq!(iter.next().unwrap().name, "test.txt");
+///     assert_eq!(iter.next().unwrap().name, "file");
+///     assert_eq!(iter.next().unwrap().name, "tmp");
+///     Ok(())
+/// }
+/// ```
 pub struct BFSTreeIter<'a> {
     items: VecDeque<&'a FileMetadata>,
 }
@@ -58,6 +112,35 @@ impl<'a> Iterator for BFSTreeIter<'a> {
 }
 
 /// An iterator that returns the currently visited items parent directory path
+///
+/// Example:
+/// // /
+/// // ├─ dir1
+/// // ├─ dir2
+/// // │  ├─ subdir
+/// // │  │  ├─ file
+/// // │  │  └─ tmp
+/// // │  └─ test.txt
+/// // └─ some.zip
+/// ```
+/// use ccfs_commons::result::CCFSResult;
+/// use ccfs_commons::test_utils::build_tree;
+/// use std::path::PathBuf;
+///
+/// fn main() -> CCFSResult<()> {
+///     let tree = build_tree()?;
+///     let mut iter = tree.bfs_paths_iter();
+///     assert_eq!(iter.next().unwrap(), PathBuf::from(""));
+///     assert_eq!(iter.next().unwrap(), PathBuf::from("/"));
+///     assert_eq!(iter.next().unwrap(), PathBuf::from("/"));
+///     assert_eq!(iter.next().unwrap(), PathBuf::from("/"));
+///     assert_eq!(iter.next().unwrap(), PathBuf::from("/dir2"));
+///     assert_eq!(iter.next().unwrap(), PathBuf::from("/dir2"));
+///     assert_eq!(iter.next().unwrap(), PathBuf::from("/dir2/subdir"));
+///     assert_eq!(iter.next().unwrap(), PathBuf::from("/dir2/subdir"));
+///     Ok(())
+/// }
+/// ```
 pub struct BFSPathsIter<'a> {
     items: VecDeque<&'a FileMetadata>,
     paths: VecDeque<PathBuf>,
@@ -87,58 +170,5 @@ impl<'a> Iterator for BFSPathsIter<'a> {
             }
             _ => None,
         }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::result::CCFSResult;
-    use crate::types::file::tests::build;
-    use crate::ROOT_DIR;
-
-    #[test]
-    fn dfs_iter_test() -> CCFSResult<()> {
-        let tree = build()?;
-        let mut iter = tree.dfs_iter();
-        assert_eq!(iter.next().unwrap().name, ROOT_DIR);
-        assert_eq!(iter.next().unwrap().name, "some.zip");
-        assert_eq!(iter.next().unwrap().name, "dir2");
-        assert_eq!(iter.next().unwrap().name, "test.txt");
-        assert_eq!(iter.next().unwrap().name, "subdir");
-        assert_eq!(iter.next().unwrap().name, "tmp");
-        assert_eq!(iter.next().unwrap().name, "file");
-        assert_eq!(iter.next().unwrap().name, "dir1");
-        Ok(())
-    }
-
-    #[test]
-    fn bfs_iter_test() -> CCFSResult<()> {
-        let tree = build()?;
-        let mut iter = tree.bfs_iter();
-        assert_eq!(iter.next().unwrap().name, ROOT_DIR);
-        assert_eq!(iter.next().unwrap().name, "dir1");
-        assert_eq!(iter.next().unwrap().name, "dir2");
-        assert_eq!(iter.next().unwrap().name, "some.zip");
-        assert_eq!(iter.next().unwrap().name, "subdir");
-        assert_eq!(iter.next().unwrap().name, "test.txt");
-        assert_eq!(iter.next().unwrap().name, "file");
-        assert_eq!(iter.next().unwrap().name, "tmp");
-        Ok(())
-    }
-
-    #[test]
-    fn bfs_paths_iter_test() -> CCFSResult<()> {
-        let tree = build()?;
-        let mut iter = tree.bfs_paths_iter();
-        assert_eq!(iter.next().unwrap(), PathBuf::from(""));
-        assert_eq!(iter.next().unwrap(), PathBuf::from("/"));
-        assert_eq!(iter.next().unwrap(), PathBuf::from("/"));
-        assert_eq!(iter.next().unwrap(), PathBuf::from("/"));
-        assert_eq!(iter.next().unwrap(), PathBuf::from("/dir2"));
-        assert_eq!(iter.next().unwrap(), PathBuf::from("/dir2"));
-        assert_eq!(iter.next().unwrap(), PathBuf::from("/dir2/subdir"));
-        assert_eq!(iter.next().unwrap(), PathBuf::from("/dir2/subdir"));
-        Ok(())
     }
 }
