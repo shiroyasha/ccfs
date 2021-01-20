@@ -3,6 +3,8 @@ pub mod errors;
 pub mod http_utils;
 pub mod path;
 pub mod result;
+#[cfg(test)]
+pub mod test_utils;
 
 mod types;
 pub use types::*;

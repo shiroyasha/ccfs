@@ -118,11 +118,11 @@ impl TreeZipper {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::types::file::tests::build;
+    use crate::test_utils::build_tree;
 
     #[test]
     fn navigator_tests() -> CCFSResult<()> {
-        let tree = build()?;
+        let tree = build_tree()?;
         let mut navigator = tree.navigate();
         assert_eq!(navigator.get_path(), ROOT_DIR);
         assert!(navigator.parent.is_none());
@@ -155,7 +155,7 @@ mod tests {
 
     #[test]
     fn zipper_tests() -> CCFSResult<()> {
-        let tree = build()?;
+        let tree = build_tree()?;
         let mut zipper = tree.zipper();
         assert_eq!(zipper.node.name, ROOT_DIR);
         assert!(zipper.parent.is_none());

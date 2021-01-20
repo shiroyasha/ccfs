@@ -94,12 +94,12 @@ impl<'a> Iterator for BFSPathsIter<'a> {
 mod tests {
     use super::*;
     use crate::result::CCFSResult;
-    use crate::types::file::tests::build;
+    use crate::test_utils::build_tree;
     use crate::ROOT_DIR;
 
     #[test]
     fn dfs_iter_test() -> CCFSResult<()> {
-        let tree = build()?;
+        let tree = build_tree()?;
         let mut iter = tree.dfs_iter();
         assert_eq!(iter.next().unwrap().name, ROOT_DIR);
         assert_eq!(iter.next().unwrap().name, "some.zip");
@@ -114,7 +114,7 @@ mod tests {
 
     #[test]
     fn bfs_iter_test() -> CCFSResult<()> {
-        let tree = build()?;
+        let tree = build_tree()?;
         let mut iter = tree.bfs_iter();
         assert_eq!(iter.next().unwrap().name, ROOT_DIR);
         assert_eq!(iter.next().unwrap().name, "dir1");
@@ -129,7 +129,7 @@ mod tests {
 
     #[test]
     fn bfs_paths_iter_test() -> CCFSResult<()> {
-        let tree = build()?;
+        let tree = build_tree()?;
         let mut iter = tree.bfs_paths_iter();
         assert_eq!(iter.next().unwrap(), PathBuf::from(""));
         assert_eq!(iter.next().unwrap(), PathBuf::from("/"));
