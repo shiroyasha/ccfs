@@ -47,6 +47,9 @@ pub enum Error {
 
     #[snafu(display("There are no available servers, try again later"))]
     NoAvailableServers,
+
+    #[snafu(display("Cannot create temp dir"))]
+    TempDir { source: std::io::Error },
 }
 
 impl<'a> ResponseError for Error {
@@ -63,6 +66,7 @@ impl<'a> ResponseError for Error {
             | UploadChunks { .. }
             | UploadSingleChunk { .. }
             | FileNotExist { .. }
+            | TempDir { .. }
             | AlreadyExists { .. }
             | NoAvailableServers { .. }
             | MissingConfigVal { .. } => ErrorInternalServerError(display).into(),

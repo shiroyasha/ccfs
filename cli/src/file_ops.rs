@@ -13,7 +13,8 @@ use snafu::ResultExt;
 use std::collections::HashMap;
 use std::io::SeekFrom;
 use std::path::Path;
-use tokio::fs::{create_dir, create_dir_all, remove_dir_all, rename, File};
+use tempfile::tempdir;
+use tokio::fs::{create_dir, remove_dir_all, rename, File};
 use tokio::io::{reader_stream, AsyncReadExt, AsyncWriteExt};
 use tokio::stream::StreamExt;
 use uuid::Uuid;
@@ -161,21 +162,13 @@ pub async fn download<T: AsRef<Path>>(
 ) -> CCFSResult<()> {
     // get chunks and merge them into a file
     let file_url = format!("{}/api/files?path={}", meta_url, path.as_ref().display());
-    let mut file: FileMetadata = get_request_json(c, &file_url).await?;
+    let file: FileMetadata = get_request_json(c, &file_url).await?;
     let target_path = target_path
         .unwrap_or_else(|| Path::new(CURR_DIR))
         .to_path_buf();
-    let tmp_path = Path::new(CURR_DIR).join(".ccfs_tmp");
-    create_dir_all(&tmp_path)
-        .await
-        .map_err(|source| BaseError::Create {
-            path: tmp_path.clone(),
-            source,
-        })?;
-    let to = target_path.join(file.name);
-    // renaming root item name, to avoid filename conflict
-    file.name = Uuid::new_v4().to_string();
-    let from = tmp_path.join(&file.name);
+    let tmp = tempdir().context(TempDir)?;
+    let from = tmp.path().join(&file.name);
+    let to = target_path.join(&file.name);
     if to.exists() {
         if !force {
             return Err(AlreadyExists { path: to.clone() }.build().into());
@@ -190,7 +183,7 @@ pub async fn download<T: AsRef<Path>>(
     }
 
     for (curr_f, parent_dir) in file.bfs_iter().zip(file.bfs_paths_iter()) {
-        let curr_dir = tmp_path.join(parent_dir);
+        let curr_dir = tmp.path().join(parent_dir);
         if let FileInfo::Directory { .. } = &curr_f.file_info {
             let curr_path = curr_dir.join(&curr_f.name);
             create_dir(&curr_path)
@@ -207,6 +200,7 @@ pub async fn download<T: AsRef<Path>>(
     rename(&from, &to)
         .await
         .map_err(|source| BaseError::Rename { from, to, source })?;
+    println!("Finished downloading `{}`", file.name);
     Ok(())
 }
 
@@ -236,10 +230,8 @@ pub async fn download_file(
         let mut responses: HashMap<Uuid, Response> = join_all(requests)
             .await
             .into_iter()
-            .filter_map(|resp| match resp {
-                Ok(pair) if pair.1.status().is_success() => Some(pair),
-                _ => None,
-            })
+            .filter_map(|resp| resp.ok())
+            .filter(|pair| pair.1.status().is_success())
             .collect();
         if responses.len() < chunks.len() {
             return Err(SomeChunksNotAvailable.build().into());
