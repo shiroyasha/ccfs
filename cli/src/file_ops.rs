@@ -231,7 +231,7 @@ pub async fn download_file(
             .await
             .into_iter()
             .filter_map(|resp| resp.ok())
-            .filter(|pair| pair.1.status().is_success())
+            .filter(|(_, resp)| resp.status().is_success())
             .collect();
         if responses.len() < chunks.len() {
             return Err(SomeChunksNotAvailable.build().into());
