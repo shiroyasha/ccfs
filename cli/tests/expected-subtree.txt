@@ -1,0 +1,5 @@
+dir2
+├─ subdir
+│  ├─ file
+│  └─ tmp
+└─ test.txt
