@@ -125,6 +125,46 @@ async fn test_upload_file_no_available_servers() -> Result<(), Box<dyn std::erro
 }
 
 #[actix_rt::test]
+async fn test_upload_file_failed_chunk_upload() -> Result<(), Box<dyn std::error::Error>> {
+    let mut cmd = Command::cargo_bin("cli")?;
+    let temp_dir = tempdir_in("./")?;
+    let file_path = temp_dir.path().join("test.txt");
+    let mut file = File::create(&file_path).await?;
+    file.write_all(b"Test file content").await?;
+
+    let chunk_server = MockServer::start();
+    let meta_server = MockServer::start();
+    meta_server.mock(|when, then| {
+        when.method(Method::POST).path("/api/files/upload");
+        then.status(200)
+            .header("content-type", "application/json")
+            .body_from_file("tests/file_resp.json");
+    });
+    let chunk_server_val = ChunkServer::new(Uuid::new_v4(), chunk_server.base_url());
+    meta_server.mock(|when, then| {
+        when.method(Method::GET).path("/api/servers");
+        then.status(200)
+            .header("Content-Type", "application/json")
+            .json_body_obj(&vec![chunk_server_val]);
+    });
+    chunk_server.mock(|when, then| {
+        when.method(Method::POST).path("/api/upload");
+        then.status(500);
+    });
+    let config_file_path =
+        create_test_config_file(&meta_server.base_url(), temp_dir.path()).await?;
+
+    cmd.arg("-c")
+        .arg(&config_file_path)
+        .arg("upload")
+        .arg(&file_path);
+    cmd.assert().failure().stderr(predicate::str::contains(
+        "Error: Failed to upload some chunks",
+    ));
+    Ok(())
+}
+
+#[actix_rt::test]
 async fn test_upload_file() -> Result<(), Box<dyn std::error::Error>> {
     let mut cmd = Command::cargo_bin("cli")?;
     let temp_dir = tempdir_in("./")?;

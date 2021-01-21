@@ -105,7 +105,7 @@ pub async fn upload_file(
         .enumerate()
         .map(|(i, chunk)| upload_chunk(c, &servers, path, (file_id, chunk, i)));
     let responses = join_all(requests).await;
-    if responses.iter().filter(|resp| resp.is_err()).size_hint().0 > 0 {
+    if responses.iter().any(|resp| resp.is_err()) {
         return Err(UploadChunks.build().into());
     }
     Ok(())
