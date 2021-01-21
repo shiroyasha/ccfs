@@ -214,7 +214,12 @@ pub async fn download_file(
         let chunks_url = format!("{}/api/chunks/file/{}", meta_url, id);
         let target_path = target_dir.join(&file.name);
         let path = target_path.as_path();
-        let groups: Vec<Vec<Chunk>> = get_request_json(c, &chunks_url).await?;
+        let chunk_groups: Vec<Vec<Chunk>> = get_request_json(c, &chunks_url).await?;
+        let groups: Vec<Vec<Chunk>> = chunk_groups
+            .iter()
+            .filter(|chunks| !chunks.is_empty())
+            .cloned()
+            .collect();
         if groups.len() < chunks.len() {
             return Err(SomeChunksNotAvailable.build().into());
         }
