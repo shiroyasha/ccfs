@@ -2,6 +2,7 @@ use actix_web::HttpServer;
 use chunk_server::{create_app, jobs};
 use std::env;
 use std::str::FromStr;
+use tokio::fs::create_dir_all;
 use tokio::task;
 use uuid::Uuid;
 
@@ -46,6 +47,7 @@ async fn main() -> std::io::Result<()> {
     let upload_path = dirs::home_dir()
         .expect("Couldn't determine home dir")
         .join("ccfs-uploads");
+    create_dir_all(&upload_path).await?;
 
     task::spawn_local(jobs::start_ping_job(
         server_addr,
