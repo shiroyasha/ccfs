@@ -3,8 +3,9 @@ use ccfs_commons::http_utils::read_body;
 use tokio::time::{delay_for, Duration};
 
 pub async fn start_ping_job(address: String, metadata_url: String, server_id: String) {
-    let client = Client::new();
     loop {
+        // TODO: investigate why using a client initialize outside the loop occasionally gives `connector has been disconnected` error
+        let client = Client::new();
         let res = client
             .post(&format!("{}/api/ping", metadata_url))
             .header("x-ccfs-chunk-server-id", server_id.clone())
