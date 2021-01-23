@@ -42,7 +42,7 @@ teardown_file() {
     rm -rf $DIR
 }
 
-assert_n_appearances_times() {
+assert_n_appearances() {
     required_appearances=$1
     file_id=$2
     name=$3[@]
@@ -75,9 +75,9 @@ assert_n_appearances_times() {
     chunks=($(echo $json | jq -r '.file_info.File.chunks[]'))
     file_id=$(echo $json | jq -r '.file_info.File.id')
 
-    assert_n_appearances_times 1 $file_id chunks
+    assert_n_appearances 1 $file_id chunks
     sleep 21 # wait for replication to run
-    assert_n_appearances_times 3 $file_id chunks
+    assert_n_appearances 3 $file_id chunks
 }
 
 @test "uploading a file <=64MiB" {
@@ -100,9 +100,9 @@ assert_n_appearances_times() {
     chunks=($(echo $json | jq -r '.file_info.File.chunks[]'))
     file_id=$(echo $json | jq -r '.file_info.File.id')
 
-    assert_n_appearances_times 1 $file_id chunks
+    assert_n_appearances 1 $file_id chunks
     sleep 21 # wait for replication to run
-    assert_n_appearances_times 3 $file_id chunks
+    assert_n_appearances 3 $file_id chunks
 }
 
 @test "uploading an empty dir" {
@@ -150,10 +150,10 @@ assert_n_appearances_times() {
     chunks2=($(echo $file2_json | jq -r '.file_info.File.chunks[]'))
     file2_id=$(echo $file2_json | jq -r '.file_info.File.id')
 
-    assert_n_appearances_times 1 $file1_id chunks1
-    assert_n_appearances_times 1 $file2_id chunks2
+    assert_n_appearances 1 $file1_id chunks1
+    assert_n_appearances 1 $file2_id chunks2
 
     sleep 21 # wait for replication to run
-    assert_n_appearances_times 3 $file1_id chunks1
-    assert_n_appearances_times 3 $file2_id chunks2
+    assert_n_appearances 3 $file1_id chunks1
+    assert_n_appearances 3 $file2_id chunks2
 }
