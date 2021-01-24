@@ -122,7 +122,7 @@ assert_n_appearances() {
     assert_line --index 3 $'└─ empty_dir\r'
 }
 
-@test "uploading an dir with sub items" {
+@test "uploading a dir with sub items" {
     run docker-compose --no-ansi run cli tree
     assert_success
     # first two rows are from docker-compose run

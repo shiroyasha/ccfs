@@ -61,6 +61,7 @@ cleanup() {
     rm -f ./test_small_file.txt
     rm -rf ./empty_dir
     rm -rf ./dir_with_content
+    rm -rf ./stuff
 }
 
 @test "downloading a file >64MiB" {
@@ -87,7 +88,7 @@ cleanup() {
     assert [ "$(ls ./empty_dir)" == "" ]
 }
 
-@test "downloading an dir with sub items" {
+@test "downloading a dir with sub items" {
     run docker-compose run cli download dir_with_content
     assert_success
     assert_output --partial 'Finished downloading `dir_with_content`'
@@ -98,4 +99,16 @@ cleanup() {
     assert [ "$(cat ./dir_with_content/test2.txt)" == "test content" ]
     assert_file_exist ./dir_with_content/subdir/stuff/items.txt
     assert [ "$(cat ./dir_with_content/subdir/stuff/items.txt)" == "another test content" ]
+}
+
+@test "downloading item on path" {
+    run docker-compose run cli download dir_with_content/subdir/stuff
+    assert_success
+    assert_output --partial 'Finished downloading `stuff`'
+    assert_not_exist ./dir_with_content
+    assert_not_exist ./subdir
+    assert_dir_exist ./stuff
+    assert_not_exist ./dir_with_content/test2.txt
+    assert_file_exist ./stuff/items.txt
+    assert [ "$(cat ./stuff/items.txt)" == "another test content" ]
 }
