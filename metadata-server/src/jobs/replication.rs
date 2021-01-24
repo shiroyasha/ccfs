@@ -8,9 +8,14 @@ use std::collections::{HashMap, HashSet};
 use tokio::time::{delay_for, Duration};
 use uuid::Uuid;
 
-pub async fn start_replication_job(tree: FileMetadataTree, chunks: ChunksMap, servers: ServersMap) {
+pub async fn start_replication_job(
+    sleep_interval: u64,
+    tree: FileMetadataTree,
+    chunks: ChunksMap,
+    servers: ServersMap,
+) {
     loop {
-        delay_for(Duration::from_secs(20)).await;
+        delay_for(Duration::from_secs(sleep_interval)).await;
         if let Err(err) = replicate_files(tree.clone(), chunks.clone(), servers.clone(), 3).await {
             // TODO: replace with logger
             println!("Error while creating replicas: {:?}", err);

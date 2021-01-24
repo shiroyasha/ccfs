@@ -1,68 +1,49 @@
+use crate::server_config::ServerConfig;
 use crate::FileMetadataTree;
 use ccfs_commons::{errors::Error as BaseError, result::CCFSResult};
 use futures::future::{FutureExt, LocalBoxFuture};
 use std::path::PathBuf;
-use tokio::fs::{create_dir_all, rename, File};
-use tokio::io::AsyncWriteExt;
+use std::sync::Arc;
+use tempfile::tempdir_in;
+use tokio::fs::{rename, write};
 use tokio::time::{delay_for, Duration};
 
-pub async fn start_snapshot_job(
-    upload_path: PathBuf,
-    snapshot_path: PathBuf,
-    metadata_tree: FileMetadataTree,
-) {
-    let temp_path = &upload_path.join("temp_snapshot");
+pub async fn start_snapshot_job(config: Arc<ServerConfig>, metadata_tree: FileMetadataTree) {
+    let temp_dir = tempdir_in(&config.snapshot_dir_path).expect("Couldn't create temp dir");
+    let temp_path = Arc::new(temp_dir.path().join("tmp_snapshot"));
+    let snapshot_path = Arc::new(config.snapshot_path());
     loop {
-        delay_for(Duration::from_secs(10)).await;
-        if let Err(err) = create_snapshot(
-            upload_path.to_path_buf(),
-            snapshot_path.to_path_buf(),
-            temp_path.to_path_buf(),
+        delay_for(Duration::from_secs(config.snapshot_interval)).await;
+        match create_snapshot(
+            snapshot_path.clone(),
+            temp_path.clone(),
             metadata_tree.clone(),
         )
         .await
         {
-            // TODO: replace with logger
-            println!("Error while creating snapshot: {:?}", err);
-        } else {
-            println!("Successfully created snapshot");
+            Ok(_) => println!("Successfully created snapshot"),
+            Err(err) => println!("Error while creating snapshot: {:?}", err), // TODO: replace with logger
         }
     }
 }
 
 fn create_snapshot(
-    upload_path: PathBuf,
-    snapshot_path: PathBuf,
-    temp_path: PathBuf,
-    metadata_tree: FileMetadataTree,
+    snapshot_path: Arc<PathBuf>,
+    temp_path: Arc<PathBuf>,
+    tree: FileMetadataTree,
 ) -> LocalBoxFuture<'static, CCFSResult<()>> {
     async move {
-        if !upload_path.exists() {
-            create_dir_all(&upload_path)
-                .await
-                .map_err(|source| BaseError::Create {
-                    path: upload_path,
-                    source,
-                })?;
-        }
-        let mut temp_file = File::create(&temp_path)
-            .await
-            .map_err(|source| BaseError::Create {
-                path: temp_path.clone(),
-                source,
-            })?;
-        temp_file
-            .write_all(&bincode::serialize(&*metadata_tree).unwrap())
+        write(&*temp_path, &bincode::serialize(&*tree).unwrap())
             .await
             .map_err(|source| BaseError::Write {
-                path: temp_path.clone(),
+                path: temp_path.to_path_buf(),
                 source,
             })?;
-        rename(&temp_path, &snapshot_path)
+        rename(&*temp_path, &*snapshot_path)
             .await
             .map_err(|source| BaseError::Rename {
-                from: temp_path,
-                to: snapshot_path,
+                from: temp_path.to_path_buf(),
+                to: snapshot_path.to_path_buf(),
                 source,
             })?;
         Ok(())

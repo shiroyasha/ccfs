@@ -76,7 +76,7 @@ assert_n_appearances() {
     file_id=$(echo $json | jq -r '.file_info.File.id')
 
     assert_n_appearances 1 $file_id chunks
-    sleep 21 # wait for replication to run
+    sleep 6 # wait for replication to run
     assert_n_appearances 3 $file_id chunks
 }
 
@@ -101,7 +101,7 @@ assert_n_appearances() {
     file_id=$(echo $json | jq -r '.file_info.File.id')
 
     assert_n_appearances 1 $file_id chunks
-    sleep 21 # wait for replication to run
+    sleep 4 # wait for replication to run
     assert_n_appearances 3 $file_id chunks
 }
 
@@ -153,7 +153,7 @@ assert_n_appearances() {
     assert_n_appearances 1 $file1_id chunks1
     assert_n_appearances 1 $file2_id chunks2
 
-    sleep 21 # wait for replication to run
+    sleep 4 # wait for replication to run
     assert_n_appearances 3 $file1_id chunks1
     assert_n_appearances 3 $file2_id chunks2
 }

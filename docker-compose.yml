@@ -24,8 +24,7 @@ services:
       - ./ccfs-commons:/app/ccfs-commons
       - ./metadata-server:/app/metadata-server
     environment:
-      HOST: "0.0.0.0"
-      PORT: "4000"
+      CONFIG_PATH: ./metadata-server/ms_config.yml
   #
   # Three chunk servers.
   #
