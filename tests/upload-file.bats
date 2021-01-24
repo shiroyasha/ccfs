@@ -13,7 +13,7 @@ setup_file() {
     assert_success
 
     # Prepare test files/directories
-    curl https://download.pytorch.org/libtorch/cpu/libtorch-macos-1.7.1.zip > $DIR/large_file.zip
+    curl https://download.pytorch.org/libtorch/cpu/libtorch-macos-1.7.0.zip > $DIR/large_file.zip
 
     echo "Small file content" > $DIR/test_small_file.txt
 
