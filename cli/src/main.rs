@@ -17,7 +17,7 @@ use tokio::fs::read_to_string;
 /// A distrubuted highly available file system
 struct CliOpts {
     /// Sets a custom config file
-    #[structopt(short, long, default_value = "./cli_config.yaml")]
+    #[structopt(short, long, default_value = "./cli_config.yml")]
     config: String,
 
     #[structopt(subcommand)]
