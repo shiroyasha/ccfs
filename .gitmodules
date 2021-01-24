@@ -7,3 +7,6 @@
 [submodule "tests/bats-support"]
 	path = tests/bats-support
 	url = https://github.com/bats-core/bats-support.git
+[submodule "tests/bats-file"]
+	path = tests/bats-file
+	url = https://github.com/bats-core/bats-file.git
