@@ -13,7 +13,7 @@ use snafu::ResultExt;
 use std::collections::HashMap;
 use std::io::SeekFrom;
 use std::path::Path;
-use tempfile::tempdir;
+use tempfile::tempdir_in;
 use tokio::fs::{create_dir, remove_dir_all, rename, File};
 use tokio::io::{reader_stream, AsyncReadExt, AsyncWriteExt};
 use tokio::stream::StreamExt;
@@ -166,7 +166,7 @@ pub async fn download<T: AsRef<Path>>(
     let target_path = target_path
         .unwrap_or_else(|| Path::new(CURR_DIR))
         .to_path_buf();
-    let tmp = tempdir().context(TempDir)?;
+    let tmp = tempdir_in(".").context(TempDir)?;
     let from = tmp.path().join(&file.name);
     let to = target_path.join(&file.name);
     if to.exists() {
