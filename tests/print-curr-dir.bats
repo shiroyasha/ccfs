@@ -3,8 +3,8 @@
 load 'bats-support/load'
 load 'bats-assert/load'
 
-DIR=~/Downloads/ccfs-test-data/print-tree
-DATA_DIR=./data/ccfs-test-data/print-tree
+DIR=~/Downloads/ccfs-test-data/print-curr-dir
+DATA_DIR=./data/ccfs-test-data/print-curr-dir
 
 setup_file() {
     rm -rf $DIR
