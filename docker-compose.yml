@@ -39,10 +39,7 @@ services:
       - ./ccfs-commons:/app/ccfs-commons
       - ./chunk-server:/app/chunk-server
     environment:
-      HOST: "0.0.0.0"
-      PORT: "5001"
-      METADATA_URL: http://host.docker.internal:4000
-      SERVER_ID: ec73d743-050b-4f52-992a-d1102340d739
+      CONFIG_PATH: ./chunk-server/dev_configs/cs_config1.yml
 
   chunk_server_002:
     build:
@@ -54,10 +51,7 @@ services:
       - ./ccfs-commons:/app/ccfs-commons
       - ./chunk-server:/app/chunk-server
     environment:
-      HOST: "0.0.0.0"
-      PORT: "5002"
-      METADATA_URL: http://host.docker.internal:4000
-      SERVER_ID: 1a6e7006-12a7-4935-b8c0-58fa7ea84b09
+      CONFIG_PATH: ./chunk-server/dev_configs/cs_config2.yml
 
   chunk_server_003:
     build:
@@ -69,10 +63,7 @@ services:
       - ./ccfs-commons:/app/ccfs-commons
       - ./chunk-server:/app/chunk-server
     environment:
-      HOST: "0.0.0.0"
-      PORT: "5003"
-      METADATA_URL: http://host.docker.internal:4000
-      SERVER_ID: 6d53a85f-505b-4a1a-ae6d-f7c18761d04a
+      CONFIG_PATH: ./chunk-server/dev_configs/cs_config3.yml
 
   #
   # CLI environment.

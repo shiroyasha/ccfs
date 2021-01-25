@@ -1,11 +1,14 @@
 mod errors;
 pub mod jobs;
 mod routes;
+pub mod server_config;
 
 use crate::routes::{download, replicate, upload};
 use actix_service::ServiceFactory;
 use actix_web::{dev, web, App};
+use server_config::ServerConfig;
 use std::path::PathBuf;
+use std::sync::Arc;
 use uuid::Uuid;
 
 pub type MetadataUrl = String;
@@ -13,9 +16,7 @@ pub type ServerID = Uuid;
 pub type UploadsDir = PathBuf;
 
 pub fn create_app(
-    metadata_url: MetadataUrl,
-    server_id: ServerID,
-    upload_path: UploadsDir,
+    config: Arc<ServerConfig>,
 ) -> App<
     impl ServiceFactory<
         Config = (),
@@ -27,9 +28,9 @@ pub fn create_app(
     dev::Body,
 > {
     App::new()
-        .data(metadata_url)
-        .data(server_id)
-        .data(upload_path)
+        .data(config.metadata_url.clone())
+        .data(config.server_id)
+        .data(config.upload_path.clone())
         .service(
             web::scope("/api")
                 .service(upload)
