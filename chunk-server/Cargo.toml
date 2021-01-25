@@ -20,10 +20,10 @@ futures = "0.3.12"
 dirs = "3.0.1"
 ccfs-commons = { path = "../ccfs-commons" }
 snafu = "0.6.10"
-sanitize-filename = "0.3"
 uuid = "0.8.2"
 pnet = "0.27.2"
 tempfile = "3.2.0"
+serde_yaml = "0.8.15"
 
 [dev-dependencies]
 httpmock = "0.5.4"

@@ -1,0 +1,15 @@
+## CCFS chunk-server config file
+
+# server configuration
+server_id: ec73d743-050b-4f52-992a-d1102340d739
+host: "0.0.0.0"
+port: 5001
+
+# path where the files will be stored
+upload_path: ~/.ccfs/ccfs-uploads
+
+# metadata server url
+metadata_url: http://host.docker.internal:4000
+
+# ping job configuration
+ping_interval: 5 # in seconds

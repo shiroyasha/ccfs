@@ -4,11 +4,12 @@ use actix_web::{test, web};
 use ccfs_commons::chunk_name;
 use chunk_server::create_app;
 use futures_util::stream::TryStreamExt;
+use std::sync::Arc;
 use tempfile::tempdir;
 use test::{call_service, init_service, TestRequest};
 use tokio::fs::File;
 use tokio::io::AsyncWriteExt;
-use uuid::Uuid;
+use utils::test_config;
 
 #[actix_rt::test]
 async fn test_download() -> std::io::Result<()> {
@@ -20,9 +21,9 @@ async fn test_download() -> std::io::Result<()> {
     let mut f = File::create(temp.path().join(&chunk_file_name)).await?;
     f.write_all(b"Test file content").await?;
 
+    let server_config = Arc::new(test_config("url".into(), temp.path()));
     // setup chunk server mock
-    let mut server =
-        init_service(create_app("url".into(), Uuid::new_v4(), temp.path().into())).await;
+    let mut server = init_service(create_app(server_config)).await;
 
     let req = TestRequest::get()
         .uri(&format!("/api/download/{}", chunk_file_name))
