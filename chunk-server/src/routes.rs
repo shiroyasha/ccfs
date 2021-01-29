@@ -15,7 +15,7 @@ use std::path::PathBuf;
 use std::str::FromStr;
 use tempfile::tempdir;
 use tokio::fs::{rename, File};
-use tokio::io::reader_stream;
+use tokio_util::io::ReaderStream;
 use uuid::Uuid;
 
 #[post("/upload")]
@@ -91,7 +91,7 @@ pub async fn download(info: Path<String>, dir: Data<UploadsDir>) -> CCFSResult<H
     let file = File::open(&path)
         .await
         .map_err(|source| BaseError::Read { path, source })?;
-    Ok(HttpResponse::Ok().streaming(reader_stream(file)))
+    Ok(HttpResponse::Ok().streaming(ReaderStream::new(file)))
 }
 
 #[post("/replicate")]
@@ -107,7 +107,7 @@ pub async fn replicate(request: HttpRequest, dir: Data<UploadsDir>) -> CCFSResul
     let f = File::open(&path)
         .await
         .map_err(|source| BaseError::Open { path, source })?;
-    let stream = reader_stream(f);
+    let stream = ReaderStream::new(f);
     let mpart = create_ccfs_multipart(chunk_id, file_id, stream);
 
     let url = format!("{}/api/upload", server_url);

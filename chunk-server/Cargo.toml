@@ -7,13 +7,12 @@ edition = "2018"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-actix-web = "3.3.2"
-actix-multipart = "0.3"
-actix-utils = "2.0.0"
-actix-http = "2.2.0"
-actix-service = "1.0.6"
-mpart-async = "0.4.2"
-tokio = { version = "0.2", features = ["full"] }
+actix-web = "4.0.0-beta.1"
+actix-multipart = "0.4.0-beta.1"
+actix-http = "3.0.0-beta.1"
+mpart-async = "0.5.0"
+tokio = { version = "1.1", features = ["full"] }
+tokio-stream = { version = "0.1" }
 tokio-util = { version = "0.6", features = ["codec", "io"] }
 serde = { version = "1.0", features = ["derive"] }
 futures = "0.3.12"
@@ -27,5 +26,5 @@ serde_yaml = "0.8.15"
 
 [dev-dependencies]
 httpmock = "0.5.4"
-actix-rt = "1.1.1"
+actix-rt = "2.0.0-beta.2"
 futures-util = "0.3.12"

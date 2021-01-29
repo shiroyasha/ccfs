@@ -1,11 +1,11 @@
-use crate::{errors::*, FileMetadataTree};
+use crate::FileMetadataTree;
 use crate::{ChunksMap, ServersMap};
 use actix_web::client::Client;
 use ccfs_commons::result::CCFSResult;
 use ccfs_commons::{Chunk, ChunkServer, FileInfo, FileMetadata};
 use futures::future::{join_all, FutureExt, LocalBoxFuture};
 use std::collections::{HashMap, HashSet};
-use tokio::time::{delay_for, Duration};
+use tokio::time::{sleep, Duration};
 use uuid::Uuid;
 
 pub async fn start_replication_job(
@@ -15,7 +15,7 @@ pub async fn start_replication_job(
     servers: ServersMap,
 ) {
     loop {
-        delay_for(Duration::from_secs(sleep_interval)).await;
+        sleep(Duration::from_secs(sleep_interval)).await;
         if let Err(err) = replicate_files(tree.clone(), chunks.clone(), servers.clone(), 3).await {
             // TODO: replace with logger
             println!("Error while creating replicas: {:?}", err);
@@ -33,9 +33,9 @@ fn replicate_files(
 ) -> LocalBoxFuture<'static, CCFSResult<()>> {
     let c = Client::new();
     async move {
-        let files_tree = tree.read().map_err(|_| ReadLock.build())?.clone();
-        let chunks = chunks_map.read().map_err(|_| ReadLock.build())?.clone();
-        let servers = servers_map.read().map_err(|_| ReadLock.build())?.clone();
+        let files_tree = tree.read().await.clone();
+        let chunks = chunks_map.read().await.clone();
+        let servers = servers_map.read().await.clone();
 
         let active_servers = servers
             .iter()

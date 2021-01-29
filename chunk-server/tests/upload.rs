@@ -2,8 +2,9 @@ mod utils;
 
 use actix_http::http::StatusCode;
 use actix_web::test::{call_service, init_service};
+use actix_web::{web, App};
 use ccfs_commons::chunk_name;
-use chunk_server::create_app;
+use chunk_server::routes::upload;
 use httpmock::{Method, MockServer};
 use std::sync::Arc;
 use tempfile::tempdir;
@@ -27,7 +28,14 @@ async fn test_successful_upload() -> std::io::Result<()> {
 
     let server_config = Arc::new(test_config(meta.base_url(), temp.path()));
     // setup chunk server mock
-    let mut server = init_service(create_app(server_config)).await;
+    let mut server = init_service(
+        App::new()
+            .data(server_config.metadata_url.clone())
+            .data(server_config.server_id)
+            .data(server_config.upload_path.clone())
+            .service(web::scope("/api").service(upload)),
+    )
+    .await;
 
     let req = create_multipart_request("/api/upload", chunk_id.into(), file_id.into()).await;
     let resp = call_service(&mut server, req).await;
@@ -58,7 +66,14 @@ async fn test_meta_fail() -> std::io::Result<()> {
 
     let server_config = Arc::new(test_config(meta.base_url(), temp.path()));
     // setup chunk server mock
-    let mut server = init_service(create_app(server_config)).await;
+    let mut server = init_service(
+        App::new()
+            .data(server_config.metadata_url.clone())
+            .data(server_config.server_id)
+            .data(server_config.upload_path.clone())
+            .service(web::scope("/api").service(upload)),
+    )
+    .await;
 
     let req = create_multipart_request("/api/upload", chunk_id.into(), file_id.into()).await;
     let resp = call_service(&mut server, req).await;
@@ -85,7 +100,14 @@ async fn test_missing_form_data() -> std::io::Result<()> {
 
     let server_config = Arc::new(test_config(meta.base_url(), temp.path()));
     // setup chunk server mock
-    let mut server = init_service(create_app(server_config)).await;
+    let mut server = init_service(
+        App::new()
+            .data(server_config.metadata_url.clone())
+            .data(server_config.server_id)
+            .data(server_config.upload_path.clone())
+            .service(web::scope("/api").service(upload)),
+    )
+    .await;
 
     let req = create_multipart_request("/api/upload", chunk_id.into(), None).await;
     let resp = call_service(&mut server, req).await;

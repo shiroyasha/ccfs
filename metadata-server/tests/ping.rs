@@ -1,21 +1,25 @@
 use actix_http::http::StatusCode;
-use actix_web::test;
-use ccfs_commons::{ChunkServer, FileMetadata};
+use actix_web::{test, web, App};
+use ccfs_commons::ChunkServer;
 use chrono::{Duration, Utc};
-use metadata_server::create_app;
+use metadata_server::routes::chunk_server_ping;
+use metadata_server::ServersMap;
 use std::collections::HashMap;
 use std::str::FromStr;
-use std::sync::{Arc, RwLock};
+use std::sync::Arc;
 use test::{call_service, init_service, TestRequest};
+use tokio::sync::RwLock;
 use uuid::Uuid;
 
 #[actix_rt::test]
 async fn test_ping_server_does_not_exist() -> std::io::Result<()> {
-    let servers = Arc::new(RwLock::new(HashMap::new()));
-    let chunks = Arc::new(RwLock::new(HashMap::new()));
-    let files = Arc::new(RwLock::new(HashMap::new()));
-    let metadata_tree = Arc::new(RwLock::new(FileMetadata::create_root()));
-    let mut server = init_service(create_app(servers.clone(), chunks, files, metadata_tree)).await;
+    let servers: ServersMap = Arc::new(RwLock::new(HashMap::new()));
+    let mut server = init_service(
+        App::new()
+            .data(servers.clone())
+            .service(web::scope("/api").service(chunk_server_ping)),
+    )
+    .await;
 
     let req = TestRequest::post()
         .uri("/api/ping")
@@ -28,7 +32,7 @@ async fn test_ping_server_does_not_exist() -> std::io::Result<()> {
     let resp = call_service(&mut server, req).await;
     assert_eq!(resp.status(), StatusCode::OK);
 
-    let servers_map = servers.read().unwrap();
+    let servers_map = servers.read().await;
     assert_eq!(servers_map.len(), 1);
 
     let s = servers_map.values().next().unwrap();
@@ -40,11 +44,13 @@ async fn test_ping_server_does_not_exist() -> std::io::Result<()> {
 
 #[actix_rt::test]
 async fn test_ping_server_missing_header() -> std::io::Result<()> {
-    let servers = Arc::new(RwLock::new(HashMap::new()));
-    let chunks = Arc::new(RwLock::new(HashMap::new()));
-    let files = Arc::new(RwLock::new(HashMap::new()));
-    let metadata_tree = Arc::new(RwLock::new(FileMetadata::create_root()));
-    let mut server = init_service(create_app(servers.clone(), chunks, files, metadata_tree)).await;
+    let servers: ServersMap = Arc::new(RwLock::new(HashMap::new()));
+    let mut server = init_service(
+        App::new()
+            .data(servers)
+            .service(web::scope("/api").service(chunk_server_ping)),
+    )
+    .await;
 
     let req = TestRequest::post()
         .uri("/api/ping")
@@ -64,11 +70,13 @@ async fn test_ping_server_when_already_exists() -> std::io::Result<()> {
     );
     let old_time = s.latest_ping_time;
     map.insert(s.id, s);
-    let servers = Arc::new(RwLock::new(map));
-    let chunks = Arc::new(RwLock::new(HashMap::new()));
-    let files = Arc::new(RwLock::new(HashMap::new()));
-    let metadata_tree = Arc::new(RwLock::new(FileMetadata::create_root()));
-    let mut server = init_service(create_app(servers.clone(), chunks, files, metadata_tree)).await;
+    let servers: ServersMap = Arc::new(RwLock::new(map));
+    let mut server = init_service(
+        App::new()
+            .data(servers.clone())
+            .service(web::scope("/api").service(chunk_server_ping)),
+    )
+    .await;
 
     let req = TestRequest::post()
         .uri("/api/ping")
@@ -81,7 +89,7 @@ async fn test_ping_server_when_already_exists() -> std::io::Result<()> {
     let resp = call_service(&mut server, req).await;
     assert_eq!(resp.status(), StatusCode::OK);
 
-    let servers_map = servers.read().unwrap();
+    let servers_map = servers.read().await;
     assert_eq!(servers_map.len(), 1);
 
     let s = servers_map.values().next().unwrap();
