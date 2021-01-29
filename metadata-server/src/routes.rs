@@ -12,7 +12,7 @@ use web::{Json, Query};
 /// Returns a list of available chunk servers where the file chunks can be uploaded
 #[get("/servers")]
 pub async fn get_servers(servers: Data<ServersMap>) -> CCFSResult<HttpResponse> {
-    let servers_map = servers.read().map_err(|_| ReadLock.build())?;
+    let servers_map = servers.read().await;
     Ok(HttpResponse::Ok().json(
         servers_map
             .values()
@@ -25,7 +25,7 @@ pub async fn get_servers(servers: Data<ServersMap>) -> CCFSResult<HttpResponse> 
 /// Returns chunk servers data for the server with ID <id>
 #[get("/servers/{id}")]
 pub async fn get_server(id: Path<Uuid>, servers: Data<ServersMap>) -> CCFSResult<HttpResponse> {
-    let servers_map = servers.read().map_err(|_| ReadLock.build())?;
+    let servers_map = servers.read().await;
     let server = servers_map.get(&id).ok_or_else(|| NotFound.build())?;
     Ok(HttpResponse::Ok().json(server))
 }
@@ -36,7 +36,7 @@ pub async fn chunk_server_ping(
     payload: ChunkServer,
     servers: Data<ServersMap>,
 ) -> CCFSResult<HttpResponse> {
-    let mut servers_map = servers.write().map_err(|_| WriteLock.build())?;
+    let mut servers_map = servers.write().await;
     let server = servers_map.entry(payload.id).or_insert_with(|| payload);
     server.latest_ping_time = DateTime::from_utc(Utc::now().naive_utc(), Utc);
     Ok(HttpResponse::Ok().finish())
@@ -51,7 +51,7 @@ pub async fn create_file(
     file_metadata_tree: Data<FileMetadataTree>,
 ) -> CCFSResult<HttpResponse> {
     let file = file_info.into_inner();
-    let mut tree = file_metadata_tree.write().map_err(|_| WriteLock.build())?;
+    let mut tree = file_metadata_tree.write().await;
     let target_path = match params.get("path") {
         Some(path) if !path.is_empty() => evaluate_path(ROOT_DIR, &tree, path)?,
         _ => String::new(),
@@ -64,7 +64,7 @@ pub async fn create_file(
                 .insert(file.name.clone(), file.clone());
         }
         FileInfo::File { id, .. } => {
-            let mut files_map = files.write().map_err(|_| WriteLock.build())?;
+            let mut files_map = files.write().await;
             files_map.insert(*id, (target_path, file.clone()));
         }
     }
@@ -77,7 +77,7 @@ pub async fn get_file(
     Query(params): Query<HashMap<String, String>>,
     file_metadata_tree: Data<FileMetadataTree>,
 ) -> CCFSResult<HttpResponse> {
-    let files_tree = file_metadata_tree.read().map_err(|_| ReadLock.build())?;
+    let files_tree = file_metadata_tree.read().await;
     let path = match params.get("path") {
         Some(path) if !path.is_empty() => evaluate_path(ROOT_DIR, &files_tree, path)?,
         _ => String::new(),
@@ -94,8 +94,8 @@ pub async fn signal_chuck_upload_completed(
     files: Data<FilesMap>,
     chunks: Data<ChunksMap>,
 ) -> CCFSResult<HttpResponse> {
-    let mut chunks = chunks.write().map_err(|_| WriteLock.build())?;
-    let mut files = files.write().map_err(|_| WriteLock.build())?;
+    let mut chunks = chunks.write().await;
+    let mut files = files.write().await;
     let (path, file) = files
         .get_mut(&chunk.file_id)
         .ok_or_else(|| NotFound.build())?;
@@ -111,7 +111,7 @@ pub async fn signal_chuck_upload_completed(
             *num_of_completed_chunks += 1;
             if *num_of_completed_chunks == file_chunks.len() {
                 *status = FileStatus::Completed;
-                let mut tree = file_metadata_tree.write().map_err(|_| WriteLock.build())?;
+                let mut tree = file_metadata_tree.write().await;
                 let target_dir = tree.traverse_mut(path).map_err(|_| NotFound.build())?;
                 target_dir
                     .children_mut()?
@@ -131,8 +131,8 @@ pub async fn get_chunks(
     chunks: Data<ChunksMap>,
     files: Data<FilesMap>,
 ) -> CCFSResult<HttpResponse> {
-    let chunks_map = chunks.read().map_err(|_| ReadLock.build())?;
-    let files_map = files.read().map_err(|_| ReadLock.build())?;
+    let chunks_map = chunks.read().await;
+    let files_map = files.read().await;
     let (_, file) = files_map.get(&file_id).ok_or_else(|| NotFound.build())?;
     Ok(HttpResponse::Ok().json(
         file.chunks()?

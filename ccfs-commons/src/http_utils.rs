@@ -9,7 +9,8 @@ use mpart_async::client::MultipartRequest;
 use snafu::ResultExt;
 use std::path::Path;
 use tokio::fs::File;
-use tokio::io::{AsyncRead, AsyncWriteExt, ReaderStream};
+use tokio::io::{AsyncRead, AsyncWriteExt};
+use tokio_util::io::ReaderStream;
 
 pub type Response = ClientResponse<Decompress<Payload>>;
 

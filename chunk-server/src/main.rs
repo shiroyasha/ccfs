@@ -1,6 +1,7 @@
-use actix_web::HttpServer;
+use actix_web::{web, App, HttpServer};
+use chunk_server::jobs;
+use chunk_server::routes::{download, replicate, upload};
 use chunk_server::server_config::ServerConfig;
-use chunk_server::{create_app, jobs};
 use std::env;
 use std::sync::Arc;
 use tokio::fs::create_dir_all;
@@ -41,8 +42,19 @@ async fn main() -> std::io::Result<()> {
     task::spawn_local(jobs::start_ping_job(server_addr, config.clone()));
 
     let address = config.address();
-    HttpServer::new(move || create_app(config.clone()))
-        .bind(&address)?
-        .run()
-        .await
+    HttpServer::new(move || {
+        App::new()
+            .data(config.metadata_url.clone())
+            .data(config.server_id)
+            .data(config.upload_path.clone())
+            .service(
+                web::scope("/api")
+                    .service(upload)
+                    .service(download)
+                    .service(replicate),
+            )
+    })
+    .bind(&address)?
+    .run()
+    .await
 }

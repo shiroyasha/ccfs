@@ -1,8 +1,8 @@
 mod utils;
 
-use actix_web::{test, web};
+use actix_web::{test, web, App};
 use ccfs_commons::chunk_name;
-use chunk_server::create_app;
+use chunk_server::routes::download;
 use futures_util::stream::TryStreamExt;
 use std::sync::Arc;
 use tempfile::tempdir;
@@ -23,7 +23,12 @@ async fn test_download() -> std::io::Result<()> {
 
     let server_config = Arc::new(test_config("url".into(), temp.path()));
     // setup chunk server mock
-    let mut server = init_service(create_app(server_config)).await;
+    let mut server = init_service(
+        App::new()
+            .data(server_config.upload_path.clone())
+            .service(web::scope("/api").service(download)),
+    )
+    .await;
 
     let req = TestRequest::get()
         .uri(&format!("/api/download/{}", chunk_file_name))

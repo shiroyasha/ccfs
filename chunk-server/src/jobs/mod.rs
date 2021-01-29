@@ -2,7 +2,7 @@ use crate::server_config::ServerConfig;
 use actix_web::client::Client;
 use ccfs_commons::http_utils::read_body;
 use std::sync::Arc;
-use tokio::time::{delay_for, Duration};
+use tokio::time::{sleep, Duration};
 
 pub async fn start_ping_job(address: String, config: Arc<ServerConfig>) {
     loop {
@@ -23,6 +23,6 @@ pub async fn start_ping_job(address: String, config: Arc<ServerConfig>) {
                 println!("ping failed: {}", err)
             }
         }
-        delay_for(Duration::from_secs(config.ping_interval)).await;
+        sleep(Duration::from_secs(config.ping_interval)).await;
     }
 }

@@ -1,20 +1,28 @@
 use actix_http::http::StatusCode;
-use actix_web::test;
+use actix_web::{test, web, App};
 use ccfs_commons::{Chunk, FileMetadata, FileStatus};
-use metadata_server::create_app;
+use metadata_server::routes::{get_chunks, signal_chuck_upload_completed};
+use metadata_server::{ChunksMap, FilesMap};
 use std::collections::{HashMap, HashSet};
-use std::sync::{Arc, RwLock};
+use std::sync::Arc;
 use test::{call_service, init_service, read_response_json, TestRequest};
+use tokio::sync::RwLock;
 use uuid::Uuid;
 
 #[actix_rt::test]
 async fn test_upload_completed_non_existing_file() -> std::io::Result<()> {
     let chunk = Chunk::new(Uuid::new_v4(), Uuid::new_v4(), Uuid::new_v4());
-    let servers = Arc::new(RwLock::new(HashMap::new()));
-    let chunks = Arc::new(RwLock::new(HashMap::new()));
-    let files = Arc::new(RwLock::new(HashMap::new()));
+    let chunks: ChunksMap = Arc::new(RwLock::new(HashMap::new()));
+    let files: FilesMap = Arc::new(RwLock::new(HashMap::new()));
     let metadata_tree = Arc::new(RwLock::new(FileMetadata::create_root()));
-    let mut server = init_service(create_app(servers, chunks, files, metadata_tree)).await;
+    let mut server = init_service(
+        App::new()
+            .data(chunks)
+            .data(files)
+            .data(metadata_tree)
+            .service(web::scope("/api").service(signal_chuck_upload_completed)),
+    )
+    .await;
 
     let req = TestRequest::post()
         .uri("/api/chunk/completed")
@@ -39,16 +47,16 @@ async fn test_upload_completed() -> std::io::Result<()> {
     };
     assert_eq!(status, &FileStatus::Started);
     map.insert(chunk.file_id, (String::from(""), new_file.clone()));
-    let servers = Arc::new(RwLock::new(HashMap::new()));
-    let chunks = Arc::new(RwLock::new(HashMap::new()));
+    let chunks: ChunksMap = Arc::new(RwLock::new(HashMap::new()));
     let files = Arc::new(RwLock::new(map));
     let metadata_tree = Arc::new(RwLock::new(FileMetadata::create_root()));
-    let mut server = init_service(create_app(
-        servers,
-        chunks.clone(),
-        files.clone(),
-        metadata_tree.clone(),
-    ))
+    let mut server = init_service(
+        App::new()
+            .data(chunks.clone())
+            .data(files.clone())
+            .data(metadata_tree.clone())
+            .service(web::scope("/api").service(signal_chuck_upload_completed)),
+    )
     .await;
 
     let req = TestRequest::post()
@@ -58,9 +66,9 @@ async fn test_upload_completed() -> std::io::Result<()> {
     let resp = call_service(&mut server, req).await;
     assert_eq!(resp.status(), StatusCode::OK);
 
-    let files_map = files.read().unwrap();
-    let tree = metadata_tree.read().unwrap();
-    let chunks_map = chunks.read().unwrap();
+    let files_map = files.read().await;
+    let tree = metadata_tree.read().await;
+    let chunks_map = chunks.read().await;
     assert_eq!(chunks_map.len(), 1);
     let file = tree.traverse("test.txt").unwrap();
     assert_eq!(file.name, "test.txt");
@@ -91,16 +99,16 @@ async fn test_upload_completed_part() -> std::io::Result<()> {
     };
     assert_eq!(status, &FileStatus::Started);
     map.insert(chunk.file_id, (String::from(""), new_file.clone()));
-    let servers = Arc::new(RwLock::new(HashMap::new()));
-    let chunks = Arc::new(RwLock::new(HashMap::new()));
+    let chunks: ChunksMap = Arc::new(RwLock::new(HashMap::new()));
     let files = Arc::new(RwLock::new(map));
     let metadata_tree = Arc::new(RwLock::new(FileMetadata::create_root()));
-    let mut server = init_service(create_app(
-        servers,
-        chunks.clone(),
-        files.clone(),
-        metadata_tree.clone(),
-    ))
+    let mut server = init_service(
+        App::new()
+            .data(chunks.clone())
+            .data(files.clone())
+            .data(metadata_tree.clone())
+            .service(web::scope("/api").service(signal_chuck_upload_completed)),
+    )
     .await;
 
     let req = TestRequest::post()
@@ -110,9 +118,9 @@ async fn test_upload_completed_part() -> std::io::Result<()> {
     let resp = call_service(&mut server, req).await;
     assert_eq!(resp.status(), StatusCode::OK);
 
-    let files_map = files.read().unwrap();
-    let tree = metadata_tree.read().unwrap();
-    let chunks_map = chunks.read().unwrap();
+    let files_map = files.read().await;
+    let tree = metadata_tree.read().await;
+    let chunks_map = chunks.read().await;
     assert_eq!(chunks_map.len(), 1);
     assert!(tree.traverse("test.txt").is_err());
     assert_eq!(files_map.len(), 1);
@@ -126,11 +134,15 @@ async fn test_upload_completed_part() -> std::io::Result<()> {
 
 #[actix_rt::test]
 async fn test_get_file_chunks_not_existing_file() -> std::io::Result<()> {
-    let servers = Arc::new(RwLock::new(HashMap::new()));
-    let chunks = Arc::new(RwLock::new(HashMap::new()));
-    let files = Arc::new(RwLock::new(HashMap::new()));
-    let metadata_tree = Arc::new(RwLock::new(FileMetadata::create_root()));
-    let mut server = init_service(create_app(servers, chunks, files, metadata_tree)).await;
+    let chunks: ChunksMap = Arc::new(RwLock::new(HashMap::new()));
+    let files: FilesMap = Arc::new(RwLock::new(HashMap::new()));
+    let mut server = init_service(
+        App::new()
+            .data(chunks)
+            .data(files)
+            .service(web::scope("/api").service(get_chunks)),
+    )
+    .await;
 
     let unexisting_id = Uuid::new_v4();
     let req = TestRequest::get()
@@ -169,11 +181,15 @@ async fn test_get_file_chunks() -> std::io::Result<()> {
     };
     let mut files_map = HashMap::new();
     files_map.insert(file_id, (String::from(""), file.clone()));
-    let servers = Arc::new(RwLock::new(HashMap::new()));
     let chunks = Arc::new(RwLock::new(chunks_map));
     let files = Arc::new(RwLock::new(files_map));
-    let metadata_tree = Arc::new(RwLock::new(FileMetadata::create_root()));
-    let mut server = init_service(create_app(servers, chunks, files, metadata_tree)).await;
+    let mut server = init_service(
+        App::new()
+            .data(chunks)
+            .data(files)
+            .service(web::scope("/api").service(get_chunks)),
+    )
+    .await;
 
     let req = TestRequest::get()
         .uri(&format!("/api/chunks/file/{}", file_id))

@@ -19,12 +19,6 @@ pub enum Error {
 
     #[snafu(display("Missing required query param"))]
     MissingParam,
-
-    #[snafu(display("ReadLock poison error"))]
-    ReadLock,
-
-    #[snafu(display("WriteLock poison error"))]
-    WriteLock,
 }
 
 impl<'a> ResponseError for Error {
@@ -34,9 +28,7 @@ impl<'a> ResponseError for Error {
         match self {
             Base { source } => source.error_response(),
             Deserialize { .. } | MissingParam { .. } => ErrorBadRequest(display).into(),
-            NotFound { .. } | ReadLock { .. } | WriteLock { .. } => {
-                ErrorInternalServerError(display).into()
-            }
+            NotFound { .. } => ErrorInternalServerError(display).into(),
         }
     }
 }

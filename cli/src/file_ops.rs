@@ -15,8 +15,9 @@ use std::io::SeekFrom;
 use std::path::Path;
 use tempfile::tempdir_in;
 use tokio::fs::{create_dir, remove_dir_all, rename, File};
-use tokio::io::{reader_stream, AsyncReadExt, AsyncWriteExt};
-use tokio::stream::StreamExt;
+use tokio::io::{AsyncReadExt, AsyncSeekExt, AsyncWriteExt};
+use tokio_stream::StreamExt;
+use tokio_util::io::ReaderStream;
 use uuid::Uuid;
 
 type Response = ClientResponse<Decompress<Payload>>;
@@ -134,7 +135,7 @@ pub async fn upload_chunk(
                 path: path.into(),
                 source,
             })?;
-        let stream = reader_stream(f.take(CHUNK_SIZE));
+        let stream = ReaderStream::new(f.take(CHUNK_SIZE));
         let mpart = create_ccfs_multipart(&chunk_id_str, &file_id_str, stream);
         let url = format!("{}/api/upload", server.address);
         let resp = c

@@ -1,15 +1,20 @@
-use actix_web::HttpServer;
+use actix_web::{web, App, HttpServer};
 use ccfs_commons::FileMetadata;
 use ccfs_commons::{errors::Error as BaseError, result::CCFSResult};
 use metadata_server::jobs::{replication, snapshot};
-use metadata_server::FileMetadataTree;
+use metadata_server::routes::{
+    chunk_server_ping, create_file, get_chunks, get_file, get_server, get_servers,
+    signal_chuck_upload_completed,
+};
 use metadata_server::{errors::*, server_config::ServerConfig};
+use metadata_server::{ChunksMap, FileMetadataTree, FilesMap, ServersMap};
 use snafu::ResultExt;
 use std::collections::HashMap;
 use std::env;
 use std::fs::File;
 use std::path::Path;
-use std::sync::{Arc, RwLock};
+use std::sync::Arc;
+use tokio::sync::RwLock;
 use tokio::task;
 
 async fn init_metadata_tree(path: &Path) -> CCFSResult<FileMetadataTree> {
@@ -31,9 +36,9 @@ async fn main() -> std::io::Result<()> {
     let config_file_path = env::var("CONFIG_PATH").unwrap_or_else(|_| "./ms_config.yml".into());
     let config = Arc::new(ServerConfig::load_config(&config_file_path)?);
 
-    let chunk_servers = Arc::new(RwLock::new(HashMap::new()));
-    let chunks = Arc::new(RwLock::new(HashMap::new()));
-    let files = Arc::new(RwLock::new(HashMap::new()));
+    let chunk_servers: ServersMap = Arc::new(RwLock::new(HashMap::new()));
+    let chunks: ChunksMap = Arc::new(RwLock::new(HashMap::new()));
+    let files: FilesMap = Arc::new(RwLock::new(HashMap::new()));
     let tree = init_metadata_tree(&config.snapshot_path())
         .await
         .unwrap_or_else(|err| panic!("Couldn't init metadata tree: {:?}", err));
@@ -47,12 +52,21 @@ async fn main() -> std::io::Result<()> {
     ));
 
     HttpServer::new(move || {
-        metadata_server::create_app(
-            chunk_servers.clone(),
-            chunks.clone(),
-            files.clone(),
-            tree.clone(),
-        )
+        App::new()
+            .data(chunk_servers.clone())
+            .data(chunks.clone())
+            .data(files.clone())
+            .data(tree.clone())
+            .service(
+                web::scope("/api")
+                    .service(get_servers)
+                    .service(get_server)
+                    .service(chunk_server_ping)
+                    .service(create_file)
+                    .service(signal_chuck_upload_completed)
+                    .service(get_file)
+                    .service(get_chunks),
+            )
     })
     .bind(&config.address())?
     .run()
