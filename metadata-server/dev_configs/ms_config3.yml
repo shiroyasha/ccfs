@@ -1,0 +1,13 @@
+## CCFS metadata server config file
+
+# server configuration
+host: 0.0.0.0
+port: 4003
+
+# snapshot job configuration
+snapshot_interval: 10 # in seconds
+snapshot_dir_path: ~/.ccfs/ccfs-snapshot
+snapshot_file_name: snapshot3
+
+# replication job configuration
+replication_interval: 3 # in seconds

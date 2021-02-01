@@ -9,7 +9,7 @@ port: 5003
 upload_path: ~/.ccfs/ccfs-uploads
 
 # metadata server url
-metadata_url: http://host.docker.internal:4000
+metadata_url: http://dev.ccfs.io
 
 # ping job configuration
 ping_interval: 5 # in seconds
