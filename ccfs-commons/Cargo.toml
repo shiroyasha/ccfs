@@ -19,3 +19,4 @@ uuid = { version = "0.8", features = ["v4", "serde"] }
 snafu = "0.6"
 regex = "1.4"
 snafu-cli-debug = "0.1"
+pnet = "0.27"

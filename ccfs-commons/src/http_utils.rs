@@ -14,6 +14,26 @@ use tokio_util::io::ReaderStream;
 
 pub type Response = ClientResponse<Decompress<Payload>>;
 
+#[cfg(target_os = "linux")]
+pub fn get_ip() -> Option<String> {
+    get_private_ip("eth0")
+}
+
+#[cfg(target_os = "macos")]
+pub fn get_ip() -> Option<String> {
+    get_private_ip("en0")
+}
+
+pub fn get_private_ip(target_name: &str) -> Option<String> {
+    let interfaces = pnet::datalink::interfaces();
+    interfaces.iter().find(|i| i.name == target_name).map(|i| {
+        i.ips
+            .iter()
+            .find(|ip| ip.is_ipv4())
+            .map(|ip| ip.ip().to_string())
+    })?
+}
+
 pub async fn read_body(mut resp: Response) -> CCFSResult<String> {
     let mut content = Vec::new();
     if let Ok(bytes) = resp.body().await {
