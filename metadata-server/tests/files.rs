@@ -1,7 +1,7 @@
 use actix_http::http::StatusCode;
 use actix_web::{test, web, App};
 use ccfs_commons::{FileInfo, FileMetadata};
-use metadata_server::routes::{create_file, get_file};
+use metadata_server::routes::api::{create_file, get_file};
 use metadata_server::FilesMap;
 use std::collections::HashMap;
 use std::sync::Arc;

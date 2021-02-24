@@ -30,6 +30,12 @@ pub struct FileMetadata {
     pub modified_at: DateTime<Utc>,
 }
 
+impl Default for FileMetadata {
+    fn default() -> Self {
+        Self::create_root()
+    }
+}
+
 impl FileMetadata {
     pub fn create_root() -> Self {
         Self::create_dir(ROOT_DIR.into())

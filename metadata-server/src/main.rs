@@ -2,8 +2,8 @@ use actix_web::{web, App, HttpServer};
 use ccfs_commons::FileMetadata;
 use ccfs_commons::{errors::Error as BaseError, result::CCFSResult};
 use metadata_server::jobs::{replication, snapshot};
-use metadata_server::routes::{
-    chunk_server_ping, create_file, get_chunks, get_file, get_server, get_servers,
+use metadata_server::routes::api::{
+    chunk_server_ping, create_file, get_chunks, get_file, get_server, get_servers, join_cluster,
     signal_chuck_upload_completed,
 };
 use metadata_server::{errors::*, server_config::ServerConfig};
@@ -51,6 +51,7 @@ async fn main() -> std::io::Result<()> {
         chunk_servers.clone(),
     ));
 
+    let address = config.address();
     HttpServer::new(move || {
         App::new()
             .data(chunk_servers.clone())
@@ -67,8 +68,12 @@ async fn main() -> std::io::Result<()> {
                     .service(get_file)
                     .service(get_chunks),
             )
+            .service(
+                web::scope("/raft")
+                    .service(web::resource("/ws/").route(web::get().to(join_cluster))),
+            )
     })
-    .bind(&config.address())?
+    .bind(&address)?
     .run()
     .await
 }
