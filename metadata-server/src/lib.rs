@@ -2,6 +2,7 @@ pub mod errors;
 pub mod jobs;
 pub mod routes;
 pub mod server_config;
+pub mod ws;
 
 use ccfs_commons::{Chunk, ChunkServer, FileMetadata};
 use std::collections::{HashMap, HashSet};

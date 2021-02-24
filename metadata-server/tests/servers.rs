@@ -2,7 +2,7 @@ use actix_http::http::StatusCode;
 use actix_web::{test, web, App};
 use ccfs_commons::ChunkServer;
 use chrono::{Duration, Utc};
-use metadata_server::routes::{get_server, get_servers};
+use metadata_server::routes::api::{get_server, get_servers};
 use metadata_server::ServersMap;
 use std::collections::HashMap;
 use std::str::FromStr;

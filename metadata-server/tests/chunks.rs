@@ -1,7 +1,7 @@
 use actix_http::http::StatusCode;
 use actix_web::{test, web, App};
 use ccfs_commons::{Chunk, FileMetadata, FileStatus};
-use metadata_server::routes::{get_chunks, signal_chuck_upload_completed};
+use metadata_server::routes::api::{get_chunks, signal_chuck_upload_completed};
 use metadata_server::{ChunksMap, FilesMap};
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
