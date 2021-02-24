@@ -2,9 +2,12 @@ use serde::{Deserialize, Serialize};
 use std::fs::{create_dir_all, File};
 use std::io::{Error, ErrorKind};
 use std::path::{Path, PathBuf};
+use uuid::Uuid;
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct ServerConfig {
+    pub id: u64,
+    pub server_id: Uuid,
     pub host: String,
     pub port: u32,
     pub snapshot_interval: u64,

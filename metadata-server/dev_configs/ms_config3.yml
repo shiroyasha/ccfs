@@ -1,6 +1,8 @@
 ## CCFS metadata server config file
 
 # server configuration
+id: 3
+server_id: d35b4896-2d3c-4d8d-91bf-f53611f94721
 host: 0.0.0.0
 port: 4003
 
