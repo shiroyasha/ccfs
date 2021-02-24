@@ -116,9 +116,9 @@ async fn send_replication_requests(
             let target_server = &servers_map.get(s_id)?.address;
             Some(
                 c.post(format!("{}/api/replicate", &from_server))
-                    .header("x-ccfs-chunk-id", chunk_id.to_string())
-                    .header("x-ccfs-file-id", file_id.to_string())
-                    .header("x-ccfs-server-url", target_server.clone())
+                    .insert_header(("x-ccfs-chunk-id", chunk_id.to_string()))
+                    .insert_header(("x-ccfs-file-id", file_id.to_string()))
+                    .insert_header(("x-ccfs-server-url", target_server.clone()))
                     .send(),
             )
         });

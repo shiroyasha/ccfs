@@ -21,3 +21,6 @@ dev.run:
 dev.cli:
 	./rebuild-dev.sh
 	docker-compose run cli $(filter-out $@,$(MAKECMDGOALS))
+
+test:
+	bats tests

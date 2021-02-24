@@ -12,7 +12,7 @@ use uuid::Uuid;
 #[actix_rt::test]
 async fn test_get_files() -> std::io::Result<()> {
     let metadata_tree = Arc::new(RwLock::new(FileMetadata::create_root()));
-    let mut server = init_service(
+    let server = init_service(
         App::new()
             .data(metadata_tree)
             .service(web::scope("/api").service(get_file)),
@@ -20,7 +20,7 @@ async fn test_get_files() -> std::io::Result<()> {
     .await;
 
     let req = TestRequest::get().uri("/api/files").to_request();
-    let data: FileMetadata = read_response_json(&mut server, req).await;
+    let data: FileMetadata = read_response_json(&server, req).await;
     assert_eq!(data.name, "/");
     assert!(matches!(
         data.file_info,
@@ -30,7 +30,7 @@ async fn test_get_files() -> std::io::Result<()> {
     ));
 
     let req = TestRequest::get().uri("/api/files?path=").to_request();
-    let data: FileMetadata = read_response_json(&mut server, req).await;
+    let data: FileMetadata = read_response_json(&server, req).await;
     assert_eq!(data.name, "/");
     assert!(matches!(
         data.file_info,
@@ -44,7 +44,7 @@ async fn test_get_files() -> std::io::Result<()> {
 #[actix_rt::test]
 async fn test_get_non_existing_file() -> std::io::Result<()> {
     let metadata_tree = Arc::new(RwLock::new(FileMetadata::create_root()));
-    let mut server = init_service(
+    let server = init_service(
         App::new()
             .data(metadata_tree)
             .service(web::scope("/api").service(get_file)),
@@ -54,7 +54,7 @@ async fn test_get_non_existing_file() -> std::io::Result<()> {
     let req = TestRequest::get()
         .uri("/api/files?path=./test.txt")
         .to_request();
-    let resp = call_service(&mut server, req).await;
+    let resp = call_service(&server, req).await;
     assert_eq!(resp.status(), StatusCode::INTERNAL_SERVER_ERROR);
     Ok(())
 }
@@ -62,7 +62,7 @@ async fn test_get_non_existing_file() -> std::io::Result<()> {
 #[actix_rt::test]
 async fn test_get_file_invalid_path() -> std::io::Result<()> {
     let metadata_tree = Arc::new(RwLock::new(FileMetadata::create_root()));
-    let mut server = init_service(
+    let server = init_service(
         App::new()
             .data(metadata_tree)
             .service(web::scope("/api").service(get_file)),
@@ -72,7 +72,7 @@ async fn test_get_file_invalid_path() -> std::io::Result<()> {
     let req = TestRequest::get()
         .uri("/api/files?path=./test.txt/...../some_dir")
         .to_request();
-    let resp = call_service(&mut server, req).await;
+    let resp = call_service(&server, req).await;
     assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
     Ok(())
 }
@@ -87,7 +87,7 @@ async fn test_get_file_at_path() -> std::io::Result<()> {
         .insert_file("test.txt", 10, vec![chunk_id])
         .unwrap();
     let metadata_tree = Arc::new(RwLock::new(tree));
-    let mut server = init_service(
+    let server = init_service(
         App::new()
             .data(metadata_tree)
             .service(web::scope("/api").service(get_file)),
@@ -97,7 +97,7 @@ async fn test_get_file_at_path() -> std::io::Result<()> {
     let req = TestRequest::get()
         .uri("/api/files?path=/projects/test.txt")
         .to_request();
-    let data: FileMetadata = read_response_json(&mut server, req).await;
+    let data: FileMetadata = read_response_json(&server, req).await;
     assert_eq!(data.name, "test.txt");
     assert!(matches!(
         data.file_info,
@@ -112,7 +112,7 @@ async fn test_get_file_at_path() -> std::io::Result<()> {
 async fn test_upload_file() -> std::io::Result<()> {
     let files: FilesMap = Arc::new(RwLock::new(HashMap::new()));
     let metadata_tree = Arc::new(RwLock::new(FileMetadata::create_root()));
-    let mut server = init_service(
+    let server = init_service(
         App::new()
             .data(files.clone())
             .data(metadata_tree)
@@ -130,7 +130,7 @@ async fn test_upload_file() -> std::io::Result<()> {
         .uri("/api/files/upload")
         .set_json(&new_file)
         .to_request();
-    let data: FileMetadata = read_response_json(&mut server, req).await;
+    let data: FileMetadata = read_response_json(&server, req).await;
     assert_eq!(data, new_file);
     {
         let files_map = files.read().await;
@@ -142,7 +142,7 @@ async fn test_upload_file() -> std::io::Result<()> {
         .uri("/api/files/upload?path=")
         .set_json(&new_file)
         .to_request();
-    let data: FileMetadata = read_response_json(&mut server, req).await;
+    let data: FileMetadata = read_response_json(&server, req).await;
     assert_eq!(data, new_file);
     {
         let files_map = files.read().await;
@@ -156,7 +156,7 @@ async fn test_upload_file() -> std::io::Result<()> {
 async fn test_upload_empty_dir() -> std::io::Result<()> {
     let files: FilesMap = Arc::new(RwLock::new(HashMap::new()));
     let metadata_tree = Arc::new(RwLock::new(FileMetadata::create_root()));
-    let mut server = init_service(
+    let server = init_service(
         App::new()
             .data(files.clone())
             .data(metadata_tree.clone())
@@ -169,7 +169,7 @@ async fn test_upload_empty_dir() -> std::io::Result<()> {
         .uri("/api/files/upload")
         .set_json(&new_dir)
         .to_request();
-    let data: FileMetadata = read_response_json(&mut server, req).await;
+    let data: FileMetadata = read_response_json(&server, req).await;
     assert_eq!(data, new_dir);
     let files_map = files.read().await;
     assert_eq!(files_map.len(), 0);
@@ -183,7 +183,7 @@ async fn test_upload_empty_dir() -> std::io::Result<()> {
 async fn test_upload_to_non_existing_path() -> std::io::Result<()> {
     let files: FilesMap = Arc::new(RwLock::new(HashMap::new()));
     let metadata_tree = Arc::new(RwLock::new(FileMetadata::create_root()));
-    let mut server = init_service(
+    let server = init_service(
         App::new()
             .data(files)
             .data(metadata_tree)
@@ -196,7 +196,7 @@ async fn test_upload_to_non_existing_path() -> std::io::Result<()> {
         .uri("/api/files/upload?path=./some_dir")
         .set_json(&new_dir)
         .to_request();
-    let resp = call_service(&mut server, req).await;
+    let resp = call_service(&server, req).await;
     assert_eq!(resp.status(), StatusCode::INTERNAL_SERVER_ERROR);
     Ok(())
 }
@@ -205,7 +205,7 @@ async fn test_upload_to_non_existing_path() -> std::io::Result<()> {
 async fn test_upload_invalid_path() -> std::io::Result<()> {
     let files: FilesMap = Arc::new(RwLock::new(HashMap::new()));
     let metadata_tree = Arc::new(RwLock::new(FileMetadata::create_root()));
-    let mut server = init_service(
+    let server = init_service(
         App::new()
             .data(files)
             .data(metadata_tree)
@@ -218,7 +218,7 @@ async fn test_upload_invalid_path() -> std::io::Result<()> {
         .uri("/api/files/upload?path=./test.txt/...../some_dir")
         .set_json(&new_dir)
         .to_request();
-    let resp = call_service(&mut server, req).await;
+    let resp = call_service(&server, req).await;
     assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
     Ok(())
 }
@@ -229,7 +229,7 @@ async fn test_upload_at_path() -> std::io::Result<()> {
     let mut tree = FileMetadata::create_root();
     tree.insert_dir("projects").unwrap();
     let metadata_tree = Arc::new(RwLock::new(tree));
-    let mut server = init_service(
+    let server = init_service(
         App::new()
             .data(files)
             .data(metadata_tree)
@@ -242,7 +242,7 @@ async fn test_upload_at_path() -> std::io::Result<()> {
         .uri("/api/files/upload?path=/projects")
         .set_json(&new_dir)
         .to_request();
-    let data: FileMetadata = read_response_json(&mut server, req).await;
+    let data: FileMetadata = read_response_json(&server, req).await;
     assert_eq!(data, new_dir);
     Ok(())
 }

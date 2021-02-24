@@ -23,7 +23,7 @@ async fn test_download() -> std::io::Result<()> {
 
     let server_config = Arc::new(test_config("url".into(), temp.path()));
     // setup chunk server mock
-    let mut server = init_service(
+    let server = init_service(
         App::new()
             .data(server_config.upload_path.clone())
             .service(web::scope("/api").service(download)),
@@ -33,7 +33,7 @@ async fn test_download() -> std::io::Result<()> {
     let req = TestRequest::get()
         .uri(&format!("/api/download/{}", chunk_file_name))
         .to_request();
-    let mut resp = call_service(&mut server, req).await;
+    let mut resp = call_service(&server, req).await;
     assert!(resp.status().is_success());
 
     let bytes = test::load_stream(resp.take_body().into_stream()).await;

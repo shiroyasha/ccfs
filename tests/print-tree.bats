@@ -42,9 +42,9 @@ teardown_file() {
 @test "print tree for empty root" {
     run docker-compose --no-ansi run cli tree
     assert_success
-    # first two rows are from docker-compose run
-    assert_line --index 2 $'/\r'
-    assert_line --index 3 ''
+    # first three rows are from docker-compose run
+    assert_line --index 3 $'/\r'
+    assert_line --index 4 ''
 }
 
 @test "print tree for root containing single file" {
@@ -53,9 +53,9 @@ teardown_file() {
 
     run docker-compose --no-ansi run cli tree
     assert_success
-    assert_line --index 2 $'/\r'
-    assert_line --index 3 $'└─ test_small_file.txt\r'
-    assert_line --index 4 ''
+    assert_line --index 3 $'/\r'
+    assert_line --index 4 $'└─ test_small_file.txt\r'
+    assert_line --index 5 ''
 }
 
 @test "print tree for root containing single dir" {
@@ -64,9 +64,9 @@ teardown_file() {
 
     run docker-compose --no-ansi run cli tree
     assert_success
-    assert_line --index 2 $'/\r'
-    assert_line --index 3 $'└─ empty_dir\r'
-    assert_line --index 4 ''
+    assert_line --index 3 $'/\r'
+    assert_line --index 4 $'└─ empty_dir\r'
+    assert_line --index 5 ''
 }
 
 @test "print tree for root containing dir with sub items" {
@@ -75,11 +75,11 @@ teardown_file() {
 
     run docker-compose --no-ansi run cli tree
     assert_success
-    assert_line --index 2 $'/\r'
-    assert_line --index 3 $'└─ dir_with_content\r'
-    assert_line --index 4 $'   ├─ subdir\r'
-    assert_line --index 5 $'   │  └─ stuff\r'
-    assert_line --index 6 $'   │     └─ items.txt\r'
-    assert_line --index 7 $'   └─ test2.txt\r'
-    assert_line --index 8 ''
+    assert_line --index 3 $'/\r'
+    assert_line --index 4 $'└─ dir_with_content\r'
+    assert_line --index 5 $'   ├─ subdir\r'
+    assert_line --index 6 $'   │  └─ stuff\r'
+    assert_line --index 7 $'   │     └─ items.txt\r'
+    assert_line --index 8 $'   └─ test2.txt\r'
+    assert_line --index 9 ''
 }

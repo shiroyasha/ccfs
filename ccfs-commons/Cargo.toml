@@ -7,15 +7,15 @@ edition = "2018"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-actix-web = "4.0.0-beta.1"
-actix-multipart = "0.4.0-beta.1"
-mpart-async = "0.5.0"
+actix-web = "4.0.0-beta.3"
+actix-multipart = "0.4.0-beta.2"
+mpart-async = "0.5"
 tokio = { version = "1.1", features = ["full"] }
-tokio-util = { version = "0.6.2", features = ["io"] }
-futures-util = "0.3.9"
+tokio-util = { version = "0.6", features = ["io"] }
+futures-util = "0.3"
 serde = { version = "1.0", features = ["derive"] }
-chrono = { version = "0.4.19", features = ["serde"] }
-uuid = { version = "0.8.2", features = ["v4", "serde"] }
-snafu = "0.6.10"
-regex = "1.4.3"
-snafu-cli-debug = "0.1.1"
+chrono = { version = "0.4", features = ["serde"] }
+uuid = { version = "0.8", features = ["v4", "serde"] }
+snafu = "0.6"
+regex = "1.4"
+snafu-cli-debug = "0.1"

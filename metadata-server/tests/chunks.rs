@@ -15,7 +15,7 @@ async fn test_upload_completed_non_existing_file() -> std::io::Result<()> {
     let chunks: ChunksMap = Arc::new(RwLock::new(HashMap::new()));
     let files: FilesMap = Arc::new(RwLock::new(HashMap::new()));
     let metadata_tree = Arc::new(RwLock::new(FileMetadata::create_root()));
-    let mut server = init_service(
+    let server = init_service(
         App::new()
             .data(chunks)
             .data(files)
@@ -28,7 +28,7 @@ async fn test_upload_completed_non_existing_file() -> std::io::Result<()> {
         .uri("/api/chunk/completed")
         .set_json(&chunk)
         .to_request();
-    let resp = call_service(&mut server, req).await;
+    let resp = call_service(&server, req).await;
     assert_eq!(resp.status(), StatusCode::INTERNAL_SERVER_ERROR);
     Ok(())
 }
@@ -50,7 +50,7 @@ async fn test_upload_completed() -> std::io::Result<()> {
     let chunks: ChunksMap = Arc::new(RwLock::new(HashMap::new()));
     let files = Arc::new(RwLock::new(map));
     let metadata_tree = Arc::new(RwLock::new(FileMetadata::create_root()));
-    let mut server = init_service(
+    let server = init_service(
         App::new()
             .data(chunks.clone())
             .data(files.clone())
@@ -63,7 +63,7 @@ async fn test_upload_completed() -> std::io::Result<()> {
         .uri("/api/chunk/completed")
         .set_json(&chunk)
         .to_request();
-    let resp = call_service(&mut server, req).await;
+    let resp = call_service(&server, req).await;
     assert_eq!(resp.status(), StatusCode::OK);
 
     let files_map = files.read().await;
@@ -102,7 +102,7 @@ async fn test_upload_completed_part() -> std::io::Result<()> {
     let chunks: ChunksMap = Arc::new(RwLock::new(HashMap::new()));
     let files = Arc::new(RwLock::new(map));
     let metadata_tree = Arc::new(RwLock::new(FileMetadata::create_root()));
-    let mut server = init_service(
+    let server = init_service(
         App::new()
             .data(chunks.clone())
             .data(files.clone())
@@ -115,7 +115,7 @@ async fn test_upload_completed_part() -> std::io::Result<()> {
         .uri("/api/chunk/completed")
         .set_json(&chunk)
         .to_request();
-    let resp = call_service(&mut server, req).await;
+    let resp = call_service(&server, req).await;
     assert_eq!(resp.status(), StatusCode::OK);
 
     let files_map = files.read().await;
@@ -136,7 +136,7 @@ async fn test_upload_completed_part() -> std::io::Result<()> {
 async fn test_get_file_chunks_not_existing_file() -> std::io::Result<()> {
     let chunks: ChunksMap = Arc::new(RwLock::new(HashMap::new()));
     let files: FilesMap = Arc::new(RwLock::new(HashMap::new()));
-    let mut server = init_service(
+    let server = init_service(
         App::new()
             .data(chunks)
             .data(files)
@@ -148,7 +148,7 @@ async fn test_get_file_chunks_not_existing_file() -> std::io::Result<()> {
     let req = TestRequest::get()
         .uri(&format!("/api/chunks/file/{}", unexisting_id))
         .to_request();
-    let resp = call_service(&mut server, req).await;
+    let resp = call_service(&server, req).await;
     assert_eq!(resp.status(), StatusCode::INTERNAL_SERVER_ERROR);
     Ok(())
 }
@@ -183,7 +183,7 @@ async fn test_get_file_chunks() -> std::io::Result<()> {
     files_map.insert(file_id, (String::from(""), file.clone()));
     let chunks = Arc::new(RwLock::new(chunks_map));
     let files = Arc::new(RwLock::new(files_map));
-    let mut server = init_service(
+    let server = init_service(
         App::new()
             .data(chunks)
             .data(files)
@@ -194,7 +194,7 @@ async fn test_get_file_chunks() -> std::io::Result<()> {
     let req = TestRequest::get()
         .uri(&format!("/api/chunks/file/{}", file_id))
         .to_request();
-    let data: Vec<Vec<Chunk>> = read_response_json(&mut server, req).await;
+    let data: Vec<Vec<Chunk>> = read_response_json(&server, req).await;
     assert_eq!(data.len(), 2);
     assert_eq!(data[0].len(), 3);
     assert!(ch1_set.iter().all(|val| data[0].contains(val)));

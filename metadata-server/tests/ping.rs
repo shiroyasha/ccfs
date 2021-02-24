@@ -14,7 +14,7 @@ use uuid::Uuid;
 #[actix_rt::test]
 async fn test_ping_server_does_not_exist() -> std::io::Result<()> {
     let servers: ServersMap = Arc::new(RwLock::new(HashMap::new()));
-    let mut server = init_service(
+    let server = init_service(
         App::new()
             .data(servers.clone())
             .service(web::scope("/api").service(chunk_server_ping)),
@@ -23,13 +23,13 @@ async fn test_ping_server_does_not_exist() -> std::io::Result<()> {
 
     let req = TestRequest::post()
         .uri("/api/ping")
-        .header(
+        .insert_header((
             "x-ccfs-chunk-server-id",
             "1a6e7006-12a7-4935-b8c0-58fa7ea84b09",
-        )
-        .header("x-ccfs-chunk-server-address", "http://localhost:7654")
+        ))
+        .insert_header(("x-ccfs-chunk-server-address", "http://localhost:7654"))
         .to_request();
-    let resp = call_service(&mut server, req).await;
+    let resp = call_service(&server, req).await;
     assert_eq!(resp.status(), StatusCode::OK);
 
     let servers_map = servers.read().await;
@@ -45,7 +45,7 @@ async fn test_ping_server_does_not_exist() -> std::io::Result<()> {
 #[actix_rt::test]
 async fn test_ping_server_missing_header() -> std::io::Result<()> {
     let servers: ServersMap = Arc::new(RwLock::new(HashMap::new()));
-    let mut server = init_service(
+    let server = init_service(
         App::new()
             .data(servers)
             .service(web::scope("/api").service(chunk_server_ping)),
@@ -54,9 +54,9 @@ async fn test_ping_server_missing_header() -> std::io::Result<()> {
 
     let req = TestRequest::post()
         .uri("/api/ping")
-        .header("x-ccfs-chunk-server-address", "http://localhost:7654")
+        .insert_header(("x-ccfs-chunk-server-address", "http://localhost:7654"))
         .to_request();
-    let resp = call_service(&mut server, req).await;
+    let resp = call_service(&server, req).await;
     assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
     Ok(())
 }
@@ -71,7 +71,7 @@ async fn test_ping_server_when_already_exists() -> std::io::Result<()> {
     let old_time = s.latest_ping_time;
     map.insert(s.id, s);
     let servers: ServersMap = Arc::new(RwLock::new(map));
-    let mut server = init_service(
+    let server = init_service(
         App::new()
             .data(servers.clone())
             .service(web::scope("/api").service(chunk_server_ping)),
@@ -80,13 +80,13 @@ async fn test_ping_server_when_already_exists() -> std::io::Result<()> {
 
     let req = TestRequest::post()
         .uri("/api/ping")
-        .header(
+        .insert_header((
             "x-ccfs-chunk-server-id",
             "1a6e7006-12a7-4935-b8c0-58fa7ea84b09",
-        )
-        .header("x-ccfs-chunk-server-address", "http://localhost:7654")
+        ))
+        .insert_header(("x-ccfs-chunk-server-address", "http://localhost:7654"))
         .to_request();
-    let resp = call_service(&mut server, req).await;
+    let resp = call_service(&server, req).await;
     assert_eq!(resp.status(), StatusCode::OK);
 
     let servers_map = servers.read().await;
