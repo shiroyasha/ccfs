@@ -1,10 +1,6 @@
-use crate::ws::cluster::Cluster;
-use crate::ws::server::CCFSWebSocket;
 use crate::{errors::*, ChunksMap, FileMetadataTree, FilesMap, ServersMap};
-use actix::Addr;
-use actix_web::web::{Data, Path, Payload};
-use actix_web::{get, post, web, HttpRequest, HttpResponse};
-use actix_web_actors::ws;
+use actix_web::web::{Data, Path};
+use actix_web::{get, post, web, HttpResponse};
 use ccfs_commons::path::evaluate_path;
 use ccfs_commons::result::CCFSResult;
 use ccfs_commons::{Chunk, ChunkServer, FileInfo, FileMetadata, FileStatus, ROOT_DIR};
@@ -145,25 +141,4 @@ pub async fn get_chunks(
             .map(|set| set.iter().cloned().collect())
             .collect::<Vec<Vec<Chunk>>>(),
     ))
-}
-
-/// Registers the node to the cluster by openning a ws connection to the leader
-pub async fn join_cluster(
-    request: HttpRequest,
-    srv: Data<Addr<Cluster>>,
-    stream: Payload,
-) -> Result<HttpResponse, actix_web::Error> {
-    let headers = request.headers();
-    let id = headers
-        .get("node_id")
-        .unwrap()
-        .to_str()
-        .unwrap()
-        .parse()
-        .unwrap();
-    ws::start(
-        CCFSWebSocket::new(id, srv.get_ref().clone()),
-        &request,
-        stream,
-    )
 }
