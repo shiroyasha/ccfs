@@ -28,7 +28,7 @@ async fn test_successful_upload() -> std::io::Result<()> {
 
     let server_config = Arc::new(test_config(meta.base_url(), temp.path()));
     // setup chunk server mock
-    let mut server = init_service(
+    let server = init_service(
         App::new()
             .data(server_config.metadata_url.clone())
             .data(server_config.server_id)
@@ -38,7 +38,7 @@ async fn test_successful_upload() -> std::io::Result<()> {
     .await;
 
     let req = create_multipart_request("/api/upload", chunk_id.into(), file_id.into()).await;
-    let resp = call_service(&mut server, req).await;
+    let resp = call_service(&server, req).await;
     upload_mock.assert();
     assert_eq!(resp.status(), StatusCode::OK);
 
@@ -66,7 +66,7 @@ async fn test_meta_fail() -> std::io::Result<()> {
 
     let server_config = Arc::new(test_config(meta.base_url(), temp.path()));
     // setup chunk server mock
-    let mut server = init_service(
+    let server = init_service(
         App::new()
             .data(server_config.metadata_url.clone())
             .data(server_config.server_id)
@@ -76,7 +76,7 @@ async fn test_meta_fail() -> std::io::Result<()> {
     .await;
 
     let req = create_multipart_request("/api/upload", chunk_id.into(), file_id.into()).await;
-    let resp = call_service(&mut server, req).await;
+    let resp = call_service(&server, req).await;
     upload_mock.assert();
     assert_eq!(resp.status(), StatusCode::INTERNAL_SERVER_ERROR);
 
@@ -100,7 +100,7 @@ async fn test_missing_form_data() -> std::io::Result<()> {
 
     let server_config = Arc::new(test_config(meta.base_url(), temp.path()));
     // setup chunk server mock
-    let mut server = init_service(
+    let server = init_service(
         App::new()
             .data(server_config.metadata_url.clone())
             .data(server_config.server_id)
@@ -110,7 +110,7 @@ async fn test_missing_form_data() -> std::io::Result<()> {
     .await;
 
     let req = create_multipart_request("/api/upload", chunk_id.into(), None).await;
-    let resp = call_service(&mut server, req).await;
+    let resp = call_service(&server, req).await;
     assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
     upload_mock.assert_hits(0);
 

@@ -47,7 +47,7 @@ pub async fn create_multipart_request(
     let content_type = format!("multipart/form-data; boundary={}", boundary);
     TestRequest::post()
         .uri(url)
-        .header("content-type", content_type)
+        .insert_header(("content-type", content_type))
         .set_payload(bytes)
         .to_request()
 }

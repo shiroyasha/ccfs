@@ -42,9 +42,9 @@ teardown_file() {
 @test "print list for empty root" {
     run docker-compose --no-ansi run cli list
     assert_success
-    # first two rows are from docker-compose run
-    assert_line --index 2 $'\r'
-    assert_line --index 3 ''
+    # first three rows are from docker-compose run
+    assert_line --index 3 $'\r'
+    assert_line --index 4 ''
 }
 
 @test "print list for root containing single file" {
@@ -53,8 +53,8 @@ teardown_file() {
 
     run docker-compose --no-ansi run cli list
     assert_success
-    assert_line --index 2 $'test_small_file.txt\r'
-    assert_line --index 3 ''
+    assert_line --index 3 $'test_small_file.txt\r'
+    assert_line --index 4 ''
 }
 
 @test "print list for root containing single dir" {
@@ -63,8 +63,8 @@ teardown_file() {
 
     run docker-compose --no-ansi run cli list
     assert_success
-    assert_line --index 2 $'empty_dir\r'
-    assert_line --index 3 ''
+    assert_line --index 3 $'empty_dir\r'
+    assert_line --index 4 ''
 }
 
 @test "print list for root containing multiple directories" {
@@ -75,7 +75,7 @@ teardown_file() {
 
     run docker-compose --no-ansi run cli list
     assert_success
-    assert_line --index 2 $'dir_with_content\r'
-    assert_line --index 3 $'empty_dir\r'
-    assert_line --index 4 ''
+    assert_line --index 3 $'dir_with_content\r'
+    assert_line --index 4 $'empty_dir\r'
+    assert_line --index 5 ''
 }

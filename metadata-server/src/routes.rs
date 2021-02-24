@@ -46,7 +46,7 @@ pub async fn chunk_server_ping(
 #[post("/files/upload")]
 pub async fn create_file(
     file_info: Json<FileMetadata>,
-    Query(params): Query<HashMap<String, String>>,
+    params: Query<HashMap<String, String>>,
     files: Data<FilesMap>,
     file_metadata_tree: Data<FileMetadataTree>,
 ) -> CCFSResult<HttpResponse> {
@@ -68,13 +68,13 @@ pub async fn create_file(
             files_map.insert(*id, (target_path, file.clone()));
         }
     }
-    Ok(HttpResponse::Ok().json(file))
+    Ok(HttpResponse::Ok().json(&file))
 }
 
 /// Returns the file info
 #[get("/files")]
 pub async fn get_file(
-    Query(params): Query<HashMap<String, String>>,
+    params: Query<HashMap<String, String>>,
     file_metadata_tree: Data<FileMetadataTree>,
 ) -> CCFSResult<HttpResponse> {
     let files_tree = file_metadata_tree.read().await;

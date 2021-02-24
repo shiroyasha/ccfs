@@ -113,10 +113,10 @@ pub async fn replicate(request: HttpRequest, dir: Data<UploadsDir>) -> CCFSResul
     let url = format!("{}/api/upload", server_url);
     let resp = Client::new()
         .post(&url)
-        .header(
+        .insert_header((
             CONTENT_TYPE,
             format!("multipart/form-data; boundary={}", &mpart.get_boundary()),
-        )
+        ))
         .send_body(BodyStream::new(Box::new(mpart)))
         .await
         .map_err(|source| BaseError::FailedRequest { url, source })?;

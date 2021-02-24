@@ -24,7 +24,7 @@ async fn test_successful_replication() -> std::io::Result<()> {
 
     let server_config = Arc::new(test_config("url".into(), temp.path()));
     // setup chunk server mock
-    let mut server = init_service(
+    let server = init_service(
         App::new()
             .data(server_config.upload_path.clone())
             .service(web::scope("/api").service(replicate)),
@@ -44,11 +44,11 @@ async fn test_successful_replication() -> std::io::Result<()> {
 
     let req = TestRequest::post()
         .uri("/api/replicate")
-        .header("x-ccfs-chunk-id", chunk_id)
-        .header("x-ccfs-file-id", file_id)
-        .header("x-ccfs-server-url", chunk_server2.base_url())
+        .insert_header(("x-ccfs-chunk-id", chunk_id))
+        .insert_header(("x-ccfs-file-id", file_id))
+        .insert_header(("x-ccfs-server-url", chunk_server2.base_url()))
         .to_request();
-    let resp = call_service(&mut server, req).await;
+    let resp = call_service(&server, req).await;
     upload_mock.assert();
     assert_eq!(resp.status(), StatusCode::OK);
     Ok(())
@@ -66,7 +66,7 @@ async fn test_chunk2_failed() -> std::io::Result<()> {
 
     let server_config = Arc::new(test_config("url".into(), temp.path()));
     // setup chunk server mock
-    let mut server = init_service(
+    let server = init_service(
         App::new()
             .data(server_config.upload_path.clone())
             .service(web::scope("/api").service(replicate)),
@@ -86,11 +86,11 @@ async fn test_chunk2_failed() -> std::io::Result<()> {
 
     let req = TestRequest::post()
         .uri("/api/replicate")
-        .header("x-ccfs-chunk-id", chunk_id)
-        .header("x-ccfs-file-id", file_id)
-        .header("x-ccfs-server-url", chunk_server2.base_url())
+        .insert_header(("x-ccfs-chunk-id", chunk_id))
+        .insert_header(("x-ccfs-file-id", file_id))
+        .insert_header(("x-ccfs-server-url", chunk_server2.base_url()))
         .to_request();
-    let resp = call_service(&mut server, req).await;
+    let resp = call_service(&server, req).await;
     upload_mock.assert();
     assert_eq!(resp.status(), StatusCode::INTERNAL_SERVER_ERROR);
     Ok(())
@@ -108,7 +108,7 @@ async fn test_missing_form_data() -> std::io::Result<()> {
 
     let server_config = Arc::new(test_config("url".into(), temp.path()));
     // setup chunk server mock
-    let mut server = init_service(
+    let server = init_service(
         App::new()
             .data(server_config.upload_path.clone())
             .service(web::scope("/api").service(replicate)),
@@ -124,10 +124,10 @@ async fn test_missing_form_data() -> std::io::Result<()> {
 
     let req = TestRequest::post()
         .uri("/api/replicate")
-        .header("x-ccfs-chunk-id", chunk_id)
-        .header("x-ccfs-server-url", chunk_server2.base_url())
+        .insert_header(("x-ccfs-chunk-id", chunk_id))
+        .insert_header(("x-ccfs-server-url", chunk_server2.base_url()))
         .to_request();
-    let resp = call_service(&mut server, req).await;
+    let resp = call_service(&server, req).await;
     upload_mock.assert_hits(0);
     assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
     Ok(())
@@ -141,7 +141,7 @@ async fn test_missing_file() -> std::io::Result<()> {
 
     let server_config = Arc::new(test_config("url".into(), temp.path()));
     // setup chunk server mock
-    let mut server = init_service(
+    let server = init_service(
         App::new()
             .data(server_config.upload_path.clone())
             .service(web::scope("/api").service(replicate)),
@@ -157,11 +157,11 @@ async fn test_missing_file() -> std::io::Result<()> {
 
     let req = TestRequest::post()
         .uri("/api/replicate")
-        .header("x-ccfs-chunk-id", chunk_id)
-        .header("x-ccfs-file-id", file_id)
-        .header("x-ccfs-server-url", chunk_server2.base_url())
+        .insert_header(("x-ccfs-chunk-id", chunk_id))
+        .insert_header(("x-ccfs-file-id", file_id))
+        .insert_header(("x-ccfs-server-url", chunk_server2.base_url()))
         .to_request();
-    let resp = call_service(&mut server, req).await;
+    let resp = call_service(&server, req).await;
     upload_mock.assert_hits(0);
     assert_eq!(resp.status(), StatusCode::INTERNAL_SERVER_ERROR);
     Ok(())

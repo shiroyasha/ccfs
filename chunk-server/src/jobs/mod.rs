@@ -10,8 +10,8 @@ pub async fn start_ping_job(address: String, config: Arc<ServerConfig>) {
         let client = Client::new();
         let res = client
             .post(&format!("{}/api/ping", config.metadata_url))
-            .header("x-ccfs-chunk-server-id", config.server_id.to_string())
-            .header("x-ccfs-chunk-server-address", address.clone())
+            .insert_header(("x-ccfs-chunk-server-id", config.server_id.to_string()))
+            .insert_header(("x-ccfs-chunk-server-address", address.clone()))
             .send()
             .await;
         match res {

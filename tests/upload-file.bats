@@ -58,9 +58,9 @@ assert_n_appearances() {
 @test "uploading a file >64MiB" {
     run docker-compose --no-ansi run cli tree
     assert_success
-    # first two rows are from docker-compose run
-    assert_line --index 2 $'/\r'
-    assert_line --index 3 ''
+    # first three rows are from docker-compose run
+    assert_line --index 3 $'/\r'
+    assert_line --index 4 ''
 
     run docker-compose run cli upload $DATA_DIR/large_file.zip
     assert_success
@@ -68,8 +68,8 @@ assert_n_appearances() {
 
     run docker-compose --no-ansi run cli tree
     assert_success
-    assert_line --index 2 $'/\r'
-    assert_line --index 3 $'└─ large_file.zip\r'
+    assert_line --index 3 $'/\r'
+    assert_line --index 4 $'└─ large_file.zip\r'
 
     json=$(curl -s http://localhost:4000/api/files?path=./large_file.zip)
     chunks=($(echo $json | jq -r '.file_info.File.chunks[]'))
@@ -83,9 +83,9 @@ assert_n_appearances() {
 @test "uploading a file <=64MiB" {
     run docker-compose --no-ansi run cli tree
     assert_success
-    # first two rows are from docker-compose run
-    assert_line --index 2 $'/\r'
-    assert_line --index 3 ''
+    # first three rows are from docker-compose run
+    assert_line --index 3 $'/\r'
+    assert_line --index 4 ''
 
     run docker-compose run cli upload $DATA_DIR/test_small_file.txt
     assert_success
@@ -93,8 +93,8 @@ assert_n_appearances() {
 
     run docker-compose --no-ansi run cli tree
     assert_success
-    assert_line --index 2 $'/\r'
-    assert_line --index 3 $'└─ test_small_file.txt\r'
+    assert_line --index 3 $'/\r'
+    assert_line --index 4 $'└─ test_small_file.txt\r'
 
     json=$(curl -s http://localhost:4000/api/files?path=./test_small_file.txt)
     chunks=($(echo $json | jq -r '.file_info.File.chunks[]'))
@@ -108,9 +108,9 @@ assert_n_appearances() {
 @test "uploading an empty dir" {
     run docker-compose --no-ansi run cli tree
     assert_success
-    # first two rows are from docker-compose run
-    assert_line --index 2 $'/\r'
-    assert_line --index 3 ''
+    # first three rows are from docker-compose run
+    assert_line --index 3 $'/\r'
+    assert_line --index 4 ''
 
     run docker-compose run cli upload $DATA_DIR/empty_dir
     assert_success
@@ -118,16 +118,16 @@ assert_n_appearances() {
 
     run docker-compose --no-ansi run cli tree
     assert_success
-    assert_line --index 2 $'/\r'
-    assert_line --index 3 $'└─ empty_dir\r'
+    assert_line --index 3 $'/\r'
+    assert_line --index 4 $'└─ empty_dir\r'
 }
 
 @test "uploading a dir with sub items" {
     run docker-compose --no-ansi run cli tree
     assert_success
-    # first two rows are from docker-compose run
-    assert_line --index 2 $'/\r'
-    assert_line --index 3 ''
+    # first three rows are from docker-compose run
+    assert_line --index 3 $'/\r'
+    assert_line --index 4 ''
 
     run docker-compose run cli upload $DATA_DIR/dir_with_content
     assert_success
@@ -135,12 +135,12 @@ assert_n_appearances() {
 
     run docker-compose --no-ansi run cli tree
     assert_success
-    assert_line --index 2 $'/\r'
-    assert_line --index 3 $'└─ dir_with_content\r'
-    assert_line --index 4 $'   ├─ subdir\r'
-    assert_line --index 5 $'   │  └─ stuff\r'
-    assert_line --index 6 $'   │     └─ items.txt\r'
-    assert_line --index 7 $'   └─ test2.txt\r'
+    assert_line --index 3 $'/\r'
+    assert_line --index 4 $'└─ dir_with_content\r'
+    assert_line --index 5 $'   ├─ subdir\r'
+    assert_line --index 6 $'   │  └─ stuff\r'
+    assert_line --index 7 $'   │     └─ items.txt\r'
+    assert_line --index 8 $'   └─ test2.txt\r'
 
     file1_json=$(curl -s http://localhost:4000/api/files?path=dir_with_content/subdir/stuff/items.txt)
     chunks1=($(echo $file1_json | jq -r '.file_info.File.chunks[]'))
