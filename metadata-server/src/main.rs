@@ -1,10 +1,10 @@
 use actix::*;
 use actix_web::{web, App, HttpServer};
-use async_raft::Config;
+use async_raft::{storage, Config};
 use ccfs_commons::http_utils::get_ip;
 use ccfs_commons::FileMetadata;
-use ccfs_commons::{errors::Error as BaseError, result::CCFSResult};
-use metadata_server::jobs::{replication, snapshot};
+use ccfs_commons::{errors, result::CCFSResult};
+// use metadata_server::jobs::replication;
 use metadata_server::raft::network::CCFSNetwork;
 use metadata_server::raft::storage::CCFSStorage;
 use metadata_server::raft::CCFSRaft;
@@ -28,10 +28,7 @@ use tokio::task;
 async fn init_metadata_tree(path: &Path) -> CCFSResult<FileMetadataTree> {
     let tree = match path.exists() {
         true => {
-            let file = File::open(path).map_err(|source| BaseError::Read {
-                path: path.into(),
-                source,
-            })?;
+            let file = File::open(path).context(errors::Read { path })?;
             bincode::deserialize_from(&file).context(Deserialize)?
         }
         false => FileMetadata::create_root(),
@@ -70,7 +67,7 @@ async fn main() -> std::io::Result<()> {
         config.id,
         Arc::new(raft_config),
         network,
-        storage,
+        storage.clone(),
     ));
 
     let bootstrap_cluster_nodes = Arc::new(Mutex::new(HashSet::<u64>::new()));
@@ -85,7 +82,6 @@ async fn main() -> std::io::Result<()> {
         cluster.clone(),
         bootstrap_size,
     ));
-    // task::spawn_local(snapshot::start_snapshot_job(config.clone(), tree.clone()));
     // task::spawn_local(replication::start_replication_job(
     //     config.replication_interval,
     //     tree.clone(),
@@ -101,6 +97,7 @@ async fn main() -> std::io::Result<()> {
             .data(files.clone())
             .data(tree.clone())
             .data(raft_node.clone())
+            .data(storage.clone())
             .data(cluster.clone())
             .data(config.clone())
             .data(bootstrap_cluster_nodes.clone())

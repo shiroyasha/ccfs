@@ -4,7 +4,7 @@ use actix_web::client::{Client, ClientResponse};
 use actix_web::dev::{Decompress, Payload};
 use actix_web::http::header::CONTENT_TYPE;
 use ccfs_commons::http_utils::{create_ccfs_multipart, read_body};
-use ccfs_commons::{errors::Error as BaseError, result::CCFSResult};
+use ccfs_commons::{errors, result::CCFSResult};
 use ccfs_commons::{Chunk, ChunkServer, FileInfo, FileMetadata, CHUNK_SIZE, CURR_DIR};
 use futures::future::join_all;
 use rand::{seq::SliceRandom, thread_rng};
@@ -47,7 +47,7 @@ pub async fn upload<T: AsRef<Path>>(c: &Client, meta_url: &str, file_path: T) ->
         if curr.is_dir() {
             paths.extend(
                 curr.read_dir()
-                    .map_err(|source| BaseError::Open { path: curr, source })?
+                    .context(errors::Open { path: curr })?
                     .filter_map(|item| item.ok())
                     .map(|item| item.path()),
             );
@@ -62,10 +62,7 @@ pub async fn upload<T: AsRef<Path>>(c: &Client, meta_url: &str, file_path: T) ->
 
 pub async fn upload_item(c: &Client, meta_url: &str, path: &Path, prefix: &Path) -> CCFSResult<()> {
     let mut chunks = Vec::new();
-    let file_meta = path.metadata().map_err(|source| BaseError::Read {
-        path: path.into(),
-        source,
-    })?;
+    let file_meta = path.metadata().context(errors::Read { path })?;
     let file_name = path.file_name().unwrap().to_str().unwrap().to_string();
     let file_data = match file_meta.is_dir() {
         true => FileMetadata::create_dir(file_name),
@@ -125,16 +122,10 @@ pub async fn upload_chunk(
     let mut rng = thread_rng();
     for _ in 0..servers.len() {
         let server = servers.choose(&mut rng).expect("servers is empty");
-        let mut f = File::open(path).await.map_err(|source| BaseError::Open {
-            path: path.into(),
-            source,
-        })?;
+        let mut f = File::open(path).await.context(errors::Open { path })?;
         f.seek(SeekFrom::Start(part as u64 * CHUNK_SIZE))
             .await
-            .map_err(|source| BaseError::Open {
-                path: path.into(),
-                source,
-            })?;
+            .context(errors::Open { path })?;
         let stream = ReaderStream::new(f.take(CHUNK_SIZE));
         let mpart = create_ccfs_multipart(&chunk_id_str, &file_id_str, stream);
         let url = format!("{}/api/upload", server.address);
@@ -146,7 +137,7 @@ pub async fn upload_chunk(
             ))
             .send_body(BodyStream::new(Box::new(mpart)))
             .await
-            .map_err(|source| BaseError::FailedRequest { url, source })?;
+            .context(errors::FailedRequest { url })?;
         if resp.status().is_success() {
             return Ok(());
         }
@@ -176,10 +167,7 @@ pub async fn download<T: AsRef<Path>>(
         } else if to.is_dir() {
             remove_dir_all(&to)
                 .await
-                .map_err(|source| BaseError::Remove {
-                    path: to.clone(),
-                    source,
-                })?;
+                .context(errors::Remove { path: &to })?;
         }
     }
 
@@ -189,10 +177,7 @@ pub async fn download<T: AsRef<Path>>(
             let curr_path = curr_dir.join(&curr_f.name);
             create_dir(&curr_path)
                 .await
-                .map_err(|source| BaseError::Create {
-                    path: curr_path.clone(),
-                    source,
-                })?;
+                .context(errors::Create { path: curr_path })?;
         } else {
             download_file(c, meta_url, &curr_f, &curr_dir).await?;
         }
@@ -200,7 +185,7 @@ pub async fn download<T: AsRef<Path>>(
 
     rename(&from, &to)
         .await
-        .map_err(|source| BaseError::Rename { from, to, source })?;
+        .context(errors::Rename { from, to })?;
     println!("Finished downloading `{}`", file.name);
     Ok(())
 }
@@ -224,12 +209,7 @@ pub async fn download_file(
         if groups.len() < chunks.len() {
             return Err(SomeChunksNotAvailable.build().into());
         }
-        let mut file = File::create(path)
-            .await
-            .map_err(|source| BaseError::Create {
-                path: path.into(),
-                source,
-            })?;
+        let mut file = File::create(path).await.context(errors::Create { path })?;
         let requests = groups
             .iter()
             .map(|group| download_chunk(c, group, meta_url));
@@ -247,10 +227,7 @@ pub async fn download_file(
                 while let Some(Ok(mut bytes)) = payload.next().await {
                     file.write_buf(&mut bytes)
                         .await
-                        .map_err(|source| BaseError::Write {
-                            path: path.into(),
-                            source,
-                        })?;
+                        .context(errors::Write { path })?;
                 }
             }
         }
@@ -281,16 +258,13 @@ async fn get_request(c: &Client, url: &str) -> CCFSResult<Response> {
         .get(url)
         .send()
         .await
-        .map_err(|source| BaseError::FailedRequest {
-            url: url.into(),
-            source,
-        })?;
+        .context(errors::FailedRequest { url })?;
     match resp.status().is_success() {
         true => Ok(resp),
-        false => Err(BaseError::Unsuccessful {
-            response: read_body(resp).await?,
+        false => {
+            let response = read_body(resp).await?;
+            Err(errors::Unsuccessful { response }.build().into())
         }
-        .into()),
     }
 }
 
@@ -304,15 +278,12 @@ async fn post_request<T: Serialize>(c: &Client, url: &str, data: T) -> CCFSResul
         .post(url)
         .send_json(&data)
         .await
-        .map_err(|source| BaseError::FailedRequest {
-            url: url.into(),
-            source,
-        })?;
+        .context(errors::FailedRequest { url })?;
     match resp.status().is_success() {
         true => Ok(resp),
-        false => Err(BaseError::Unsuccessful {
-            response: read_body(resp).await?,
+        false => {
+            let response = read_body(resp).await?;
+            Err(errors::Unsuccessful { response }.build().into())
         }
-        .into()),
     }
 }

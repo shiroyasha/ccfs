@@ -7,7 +7,7 @@ use actix_web::{web::Data, web::Path, HttpRequest};
 use ccfs_commons::http_utils::{
     create_ccfs_multipart, get_header, handle_file, handle_string, read_body,
 };
-use ccfs_commons::{chunk_name, errors::Error as BaseError, result::CCFSResult, Chunk};
+use ccfs_commons::{chunk_name, errors, result::CCFSResult, Chunk};
 use futures::TryStreamExt;
 use snafu::ResultExt;
 use std::collections::HashMap;
@@ -52,21 +52,15 @@ pub async fn upload(
     let file_id_str = parts.remove("file_id").unwrap_or_else(|| unreachable!());
     let file_path_str = parts.remove("file").unwrap_or_else(|| unreachable!());
 
-    let id = Uuid::from_str(&id_str).map_err(|source| BaseError::ParseUuid {
-        text: id_str,
-        source,
-    })?;
-    let file_id = Uuid::from_str(&file_id_str).map_err(|source| BaseError::ParseUuid {
-        text: file_id_str,
-        source,
-    })?;
+    let id = Uuid::from_str(&id_str).context(errors::ParseUuid { text: id_str })?;
+    let file_id = Uuid::from_str(&file_id_str).context(errors::ParseUuid { text: file_id_str })?;
 
     let chunk = Chunk::new(id, file_id, **server);
     let from = PathBuf::from(file_path_str);
     let to = target_dir.join(chunk.chunk_name());
     rename(&from, &to)
         .await
-        .map_err(|source| BaseError::Rename { from, to, source })?;
+        .context(errors::Rename { from, to })?;
 
     let resp = Client::new()
         .post(&format!("{}/api/chunk/completed", **meta_url))
@@ -88,25 +82,20 @@ pub async fn upload(
 #[get("/download/{chunk_name}")]
 pub async fn download(info: Path<String>, dir: Data<UploadsDir>) -> CCFSResult<HttpResponse> {
     let path = dir.join(&info.into_inner());
-    let file = File::open(&path)
-        .await
-        .map_err(|source| BaseError::Read { path, source })?;
+    let file = File::open(&path).await.context(errors::Read { path })?;
     Ok(HttpResponse::Ok().streaming(ReaderStream::new(file)))
 }
 
 #[post("/replicate")]
 pub async fn replicate(request: HttpRequest, dir: Data<UploadsDir>) -> CCFSResult<HttpResponse> {
     let headers = request.headers();
-    let chunk_id = get_header(headers, "x-ccfs-chunk-id").ok_or_else(|| MissingHeader.build())?;
-    let file_id = get_header(headers, "x-ccfs-file-id").ok_or_else(|| MissingHeader.build())?;
-    let server_url =
-        get_header(headers, "x-ccfs-server-url").ok_or_else(|| MissingHeader.build())?;
+    let chunk_id = get_header(headers, "x-ccfs-chunk-id")?;
+    let file_id = get_header(headers, "x-ccfs-file-id")?;
+    let server_url = get_header(headers, "x-ccfs-server-url")?;
     let chunk_file_name = chunk_name(file_id, chunk_id);
     let path = dir.join(&chunk_file_name);
 
-    let f = File::open(&path)
-        .await
-        .map_err(|source| BaseError::Open { path, source })?;
+    let f = File::open(&path).await.context(errors::Open { path })?;
     let stream = ReaderStream::new(f);
     let mpart = create_ccfs_multipart(chunk_id, file_id, stream);
 
@@ -119,10 +108,10 @@ pub async fn replicate(request: HttpRequest, dir: Data<UploadsDir>) -> CCFSResul
         ))
         .send_body(BodyStream::new(Box::new(mpart)))
         .await
-        .map_err(|source| BaseError::FailedRequest { url, source })?;
+        .context(errors::FailedRequest { url })?;
     if !resp.status().is_success() {
         let response = read_body(resp).await?;
-        return Err(BaseError::Unsuccessful { response }.into());
+        return Err(errors::Unsuccessful { response }.build().into());
     }
     Ok(HttpResponse::Ok().finish())
 }

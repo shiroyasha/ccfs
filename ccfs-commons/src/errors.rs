@@ -82,6 +82,9 @@ pub enum Error {
 
     #[snafu(display("Invalid path: {}", msg))]
     InvalidPath { msg: String },
+
+    #[snafu(display("Missing some headers"))]
+    MissingHeader,
 }
 
 impl ResponseError for Error {
@@ -100,7 +103,7 @@ impl ResponseError for Error {
             | NotExist { .. }
             | FailedRequest { .. }
             | Unsuccessful { .. } => ErrorInternalServerError(display).into(),
-            InvalidPath { .. } | ParseString { .. } | ParseUuid { .. } => {
+            InvalidPath { .. } | ParseString { .. } | ParseUuid { .. } | MissingHeader => {
                 ErrorBadRequest(display).into()
             }
         }
@@ -108,8 +111,8 @@ impl ResponseError for Error {
 }
 
 impl From<Error> for CCFSResponseError {
-    fn from(error: Error) -> CCFSResponseError {
-        CCFSResponseError {
+    fn from(error: Error) -> Self {
+        Self {
             inner: Box::new(error),
         }
     }

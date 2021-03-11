@@ -2,7 +2,7 @@ mod errors;
 mod file_ops;
 
 use actix_web::client::Client;
-use ccfs_commons::errors::{CCFSResponseError, Error as BaseError};
+use ccfs_commons::errors::{self as base, CCFSResponseError};
 use errors::*;
 use file_ops::{download, list, tree, upload};
 use snafu::ResultExt;
@@ -55,12 +55,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         return Err(FileNotExist { path }.build().into());
     }
     if path.is_dir() {
-        return Err(BaseError::NotAFile { path }.into());
+        return Err(base::NotAFile { path }.build().into());
     }
 
-    let content = read_to_string(&path)
-        .await
-        .map_err(|source| BaseError::Read { path, source })?;
+    let content = read_to_string(&path).await.context(base::Read { path })?;
     let config_map: HashMap<String, String> = serde_yaml::from_str(&content).context(ParseYaml)?;
     let key = "metadata-server-url";
     let meta_url = config_map

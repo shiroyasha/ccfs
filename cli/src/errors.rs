@@ -1,6 +1,6 @@
 use actix_web::error::{ErrorBadRequest, ErrorInternalServerError};
 use actix_web::{HttpResponse, ResponseError};
-use ccfs_commons::errors::CCFSResponseError;
+use ccfs_commons::errors::{CCFSResponseError, Error as BaseError};
 use snafu::Snafu;
 use std::path::PathBuf;
 use uuid::Uuid;
@@ -9,7 +9,7 @@ use uuid::Uuid;
 #[snafu(visibility = "pub")]
 pub enum Error {
     #[snafu(display("{}", source))]
-    Base { source: ccfs_commons::errors::Error },
+    Base { source: BaseError },
 
     #[snafu(display("Unable to parse to json: {}", source))]
     ParseJson {
@@ -75,9 +75,15 @@ impl<'a> ResponseError for Error {
 }
 
 impl From<Error> for CCFSResponseError {
-    fn from(error: Error) -> CCFSResponseError {
-        CCFSResponseError {
+    fn from(error: Error) -> Self {
+        Self {
             inner: Box::new(error),
         }
+    }
+}
+
+impl From<BaseError> for Error {
+    fn from(error: BaseError) -> Self {
+        Self::Base { source: error }
     }
 }
