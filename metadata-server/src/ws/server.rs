@@ -1,5 +1,5 @@
 use super::cluster::Cluster;
-use super::{Connect, Disconnect, Message};
+use super::{Connect, Disconnect, Message, NodeAddress, ResponseMessage};
 use actix::prelude::*;
 use actix::Addr;
 use actix_web_actors::ws;
@@ -48,7 +48,14 @@ impl Handler<Message> for CCFSWebSocket {
     type Result = ();
 
     fn handle(&mut self, msg: Message, ctx: &mut Self::Context) {
-        ctx.binary(bincode::serialize(&msg).expect("failed to serialize ws msg"));
+        match msg {
+            Message::Request(req) => {
+                ctx.binary(bincode::serialize(&req).expect("failed to serialize ws msg"));
+            }
+            Message::Text(text) => {
+                ctx.text(text.0);
+            }
+        }
     }
 }
 
@@ -68,10 +75,20 @@ impl StreamHandler<Result<ws::Message, ws::ProtocolError>> for CCFSWebSocket {
                 ctx.pong(&msg);
             }
             ws::Message::Pong(_) => {}
-            ws::Message::Text(_text) => {}
-            ws::Message::Binary(data) => {
-                println!("Received: {:?}", data);
+            ws::Message::Text(text) => {
+                let content = text.to_string();
+                let parts = content.split_terminator('|').collect::<Vec<_>>();
+                self.addr.do_send(NodeAddress {
+                    id: parts[0].parse().unwrap(),
+                    address: parts[1].to_string(),
+                })
             }
+            ws::Message::Binary(data) => match bincode::deserialize::<ResponseMessage>(&data) {
+                Ok(resp) => {
+                    self.addr.do_send(resp);
+                }
+                Err(err) => println!("couldn't deser response message: {}", err),
+            },
             ws::Message::Close(reason) => {
                 ctx.close(reason);
                 ctx.stop();
