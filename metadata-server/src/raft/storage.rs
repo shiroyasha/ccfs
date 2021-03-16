@@ -1,13 +1,16 @@
 use super::data::{CCFSAction, CCFSSnapshot, CCFSStateMachine, ClientRequest, ClientResponse};
-use anyhow::Result;
+use crate::errors::*;
+use anyhow::{anyhow, Result};
 use async_raft::async_trait::async_trait;
 use async_raft::raft::{Entry, EntryPayload, MembershipConfig};
 use async_raft::storage::{CurrentSnapshotData, HardState, InitialState, RaftStorage};
 use async_raft::NodeId;
-use std::collections::BTreeMap;
+use ccfs_commons::{Chunk, FileInfo, FileMetadata, FileStatus};
+use std::collections::{BTreeMap, HashSet};
 use std::io::Cursor;
+use std::path::PathBuf;
 use thiserror::Error;
-use tokio::sync::RwLock;
+use tokio::sync::{RwLock, RwLockReadGuard, RwLockWriteGuard};
 use uuid::Uuid;
 
 /// Error used to trigger Raft shutdown from storage.
@@ -47,6 +50,85 @@ impl CCFSStorage {
             current_snapshot,
         }
     }
+
+    pub async fn state_machine_read(&self) -> RwLockReadGuard<'_, CCFSStateMachine> {
+        self.sm.read().await
+    }
+
+    pub async fn state_machine_write(&self) -> RwLockWriteGuard<'_, CCFSStateMachine> {
+        self.sm.write().await
+    }
+}
+
+async fn apply_action(
+    sm: &mut RwLockWriteGuard<'_, CCFSStateMachine>,
+    data: &ClientRequest,
+) -> Result<ClientResponse> {
+    match &data.action {
+        CCFSAction::Add { item, target_path } => add_item_to_tree(sm, item, target_path).await,
+        CCFSAction::UploadCompleted { chunk } => upload_completed(sm, chunk).await,
+    }
+}
+
+async fn add_item_to_tree(
+    sm: &mut RwLockWriteGuard<'_, CCFSStateMachine>,
+    item: &FileMetadata,
+    target_path: &str,
+) -> Result<ClientResponse> {
+    let target = sm
+        .state
+        .tree
+        .traverse_mut(target_path)
+        .map_err(|err| anyhow!("{}", err))?;
+    target
+        .children_mut()
+        .map_err(|err| anyhow!("{}", err))?
+        .insert(item.name.clone(), item.clone());
+    if let FileInfo::File { id, .. } = &item.file_info {
+        sm.state.files.insert(
+            *id,
+            PathBuf::from(target_path)
+                .join(&item.name)
+                .display()
+                .to_string(),
+        );
+    }
+    Ok(ClientResponse::Success { tree: item.clone() })
+}
+
+async fn upload_completed(
+    sm: &mut RwLockWriteGuard<'_, CCFSStateMachine>,
+    chunk: &Chunk,
+) -> Result<ClientResponse> {
+    let path = sm
+        .state
+        .files
+        .get(&chunk.file_id)
+        .ok_or_else(|| anyhow!("{}", NotFound.build()))?
+        .clone();
+    sm.state
+        .chunks
+        .entry(chunk.id)
+        .or_insert_with(HashSet::new)
+        .insert(*chunk);
+    let tree = sm
+        .state
+        .tree
+        .traverse_mut(&path)
+        .map_err(|err| anyhow!("{}", err))?;
+    if let FileInfo::File {
+        completed_chunks,
+        chunks: file_chunks,
+        status,
+        ..
+    } = &mut tree.file_info
+    {
+        completed_chunks.insert(chunk.id);
+        if completed_chunks.len() == file_chunks.len() {
+            *status = FileStatus::Completed;
+        }
+    }
+    Ok(ClientResponse::Success { tree: tree.clone() })
 }
 
 #[async_trait]
@@ -151,25 +233,19 @@ impl RaftStorage<ClientRequest, ClientResponse> for CCFSStorage {
     ) -> Result<ClientResponse> {
         let mut sm = self.sm.write().await;
         sm.last_applied_log = *index;
-        if let Some((serial, res)) = sm.client_serial_responses.get(&data.client) {
+        if let Some((serial, res)) = sm.client_serial_responses.get(&data.client_id) {
             if serial == &data.serial {
                 return Ok(res.clone());
             }
         }
-        let response = match &data.action {
-            CCFSAction::Add { item, target_path } => {
-                let target_dir = sm.tree.traverse_mut(&target_path).unwrap();
-                target_dir
-                    .children_mut()
-                    .unwrap()
-                    .insert(item.name.clone(), item.clone());
-                ClientResponse {
-                    tree: sm.tree.clone(),
-                }
-            }
+        let response = match apply_action(&mut sm, data).await {
+            Ok(resp) => resp,
+            Err(err) => ClientResponse::Error {
+                msg: err.to_string(),
+            },
         };
         sm.client_serial_responses
-            .insert(data.client, (data.serial, response.clone()));
+            .insert(data.client_id, (data.serial, response.clone()));
         Ok(response)
     }
 
@@ -177,25 +253,19 @@ impl RaftStorage<ClientRequest, ClientResponse> for CCFSStorage {
         let mut sm = self.sm.write().await;
         for (index, data) in entries {
             sm.last_applied_log = **index;
-            if let Some((serial, _)) = sm.client_serial_responses.get(&data.client) {
+            if let Some((serial, _)) = sm.client_serial_responses.get(&data.client_id) {
                 if serial == &data.serial {
                     continue;
                 }
             }
-            let response = match &data.action {
-                CCFSAction::Add { item, target_path } => {
-                    let target_dir = sm.tree.traverse_mut(&target_path).unwrap();
-                    target_dir
-                        .children_mut()
-                        .unwrap()
-                        .insert(item.name.clone(), item.clone());
-                    ClientResponse {
-                        tree: sm.tree.clone(),
-                    }
-                }
+            let response = match apply_action(&mut sm, data).await {
+                Ok(resp) => resp,
+                Err(err) => ClientResponse::Error {
+                    msg: err.to_string(),
+                },
             };
             sm.client_serial_responses
-                .insert(data.client, (data.serial, response.clone()));
+                .insert(data.client_id, (data.serial, response.clone()));
         }
         Ok(())
     }
@@ -205,7 +275,7 @@ impl RaftStorage<ClientRequest, ClientResponse> for CCFSStorage {
         {
             // Serialize the data of the state machine.
             let sm = self.sm.read().await;
-            data = bincode::serialize(&*sm)?;
+            data = bincode::serialize(&sm.state.tree)?;
             last_applied_log = sm.last_applied_log;
         } // Release state machine read lock.
 
@@ -232,7 +302,7 @@ impl RaftStorage<ClientRequest, ClientResponse> for CCFSStorage {
             term = log
                 .get(&last_applied_log)
                 .map(|entry| entry.term)
-                .ok_or_else(|| anyhow::anyhow!(ERR_INCONSISTENT_LOG))?;
+                .ok_or_else(|| anyhow!(ERR_INCONSISTENT_LOG))?;
             *log = log.split_off(&last_applied_log);
             log.insert(
                 last_applied_log,

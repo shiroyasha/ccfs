@@ -2,6 +2,8 @@ use std::collections::HashSet;
 use std::sync::Arc;
 
 use crate::raft::CCFSRaft;
+use crate::server_config::ServerConfig;
+use crate::update_ds;
 use crate::ws::cluster::Cluster;
 use crate::ws::server::CCFSWebSocket;
 use actix::Addr;
@@ -25,6 +27,7 @@ pub async fn join_cluster(
         .unwrap()
         .parse()
         .unwrap();
+    println!("node {} is trying to join cluster", id);
     ws::start(
         CCFSWebSocket::new(id, srv.get_ref().clone()),
         &request,
@@ -45,7 +48,7 @@ pub async fn vote(rpc: Json<VoteRequest>, raft_node: Data<Arc<CCFSRaft>>) -> Htt
 #[post("/bootstrap")]
 pub async fn bootstrap(
     request: HttpRequest,
-    raft_node: Data<Arc<CCFSRaft>>,
+    config: Data<Arc<ServerConfig>>,
     bootstrap_cluster_nodes: Data<Arc<Mutex<HashSet<u64>>>>,
     bootstrap_size: Data<usize>,
 ) -> HttpResponse {
@@ -60,8 +63,12 @@ pub async fn bootstrap(
     let mut nodes = bootstrap_cluster_nodes.lock().await;
     nodes.insert(id);
     if nodes.len() < **bootstrap_size {
-        HttpResponse::InternalServerError().body("waiting for all nodes to connect".to_string())
+        return HttpResponse::InternalServerError()
+            .body("waiting for all nodes to connect".to_string());
     } else {
-        HttpResponse::Ok().json(&*nodes)
+        match update_ds(&config.full_address()).await {
+            Ok(resp) => HttpResponse::Ok().json(&*nodes),
+            Err(err) => HttpResponse::InternalServerError().body(err.to_string()),
+        }
     }
 }

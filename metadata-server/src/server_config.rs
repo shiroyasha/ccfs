@@ -1,3 +1,4 @@
+use ccfs_commons::http_utils::get_ip;
 use serde::{Deserialize, Serialize};
 use std::fs::{create_dir_all, File};
 use std::io::{Error, ErrorKind};
@@ -60,5 +61,13 @@ impl ServerConfig {
 
     pub fn snapshot_path(&self) -> PathBuf {
         self.snapshot_dir_path.join(&self.snapshot_file_name)
+    }
+
+    pub fn full_address(&self) -> String {
+        format!(
+            "http://{}:{}",
+            get_ip().unwrap_or_else(|| "127.0.0.1".into()),
+            self.port
+        )
     }
 }

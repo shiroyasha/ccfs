@@ -64,6 +64,7 @@ pub async fn upload(
 
     let resp = Client::new()
         .post(&format!("{}/api/chunk/completed", **meta_url))
+        .insert_header(("x-ccfs-client-id", &*server.to_string()))
         .send_json(&chunk)
         .await
         .map_err(|err| {
@@ -108,10 +109,10 @@ pub async fn replicate(request: HttpRequest, dir: Data<UploadsDir>) -> CCFSResul
         ))
         .send_body(BodyStream::new(Box::new(mpart)))
         .await
-        .context(errors::FailedRequest { url })?;
+        .context(errors::FailedRequest { url: &url })?;
     if !resp.status().is_success() {
         let response = read_body(resp).await?;
-        return Err(errors::Unsuccessful { response }.build().into());
+        return Err(errors::Unsuccessful { url, response }.build().into());
     }
     Ok(HttpResponse::Ok().finish())
 }

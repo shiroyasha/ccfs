@@ -9,7 +9,7 @@ use actix::io::SinkWrite;
 use actix::{Actor, Addr, StreamHandler};
 use awc::Client;
 use ccfs_commons::http_utils::read_body;
-use ccfs_commons::{Chunk, ChunkServer, FileMetadata};
+use ccfs_commons::{Chunk, ChunkServer};
 use futures::StreamExt;
 use raft::CCFSRaft;
 use std::collections::{HashMap, HashSet};
@@ -21,9 +21,8 @@ use ws::client::CCFSWsClient;
 use ws::cluster::Cluster;
 
 pub type ServersMap = Arc<RwLock<HashMap<Uuid, ChunkServer>>>;
-pub type ChunksMap = Arc<RwLock<HashMap<Uuid, HashSet<Chunk>>>>;
-pub type FilesMap = Arc<RwLock<HashMap<Uuid, (String, FileMetadata)>>>;
-pub type FileMetadataTree = Arc<RwLock<FileMetadata>>;
+pub type ChunksMap = HashMap<Uuid, HashSet<Chunk>>;
+pub type FilesMap = HashMap<Uuid, String>;
 
 pub async fn update_ds(address: &str) -> Result<String, anyhow::Error> {
     let c = Client::new();
@@ -47,23 +46,18 @@ pub async fn bootstrap_cluster(
     node: Arc<CCFSRaft>,
     address: String,
     cluster: Addr<Cluster>,
+    bootstrap_url: Option<String>,
     bootstrap_size: usize,
 ) {
     let c = Arc::new(Client::new());
-    if bootstrap_size > 0 {
-        loop {
-            match update_ds(&address).await {
-                Ok(_) => break,
-                Err(err) => {
-                    println!("Couldn't update ds: {}", err);
-                    tokio::time::sleep(Duration::from_secs(1)).await;
-                }
-            }
-        }
-        loop {
-            println!("calling bootstrap endpoint");
+    match (bootstrap_url, bootstrap_size) {
+        (Some(url), target_size) if target_size > 0 => loop {
+            println!(
+                "calling bootstrap endpoint, addr {}",
+                format!("{}/raft/bootstrap", url)
+            );
             match c
-                .post("http://envoy:10000/raft/bootstrap")
+                .post(&format!("{}/raft/bootstrap", url))
                 .insert_header(("node_id", id.to_string()))
                 .send()
                 .await
@@ -74,12 +68,17 @@ pub async fn bootstrap_cluster(
                     let _ = node.initialize(members).await;
                     break;
                 }
-                _ => {
-                    println!("couldn't bootstrap cluster yet");
+                Ok(resp) => {
+                    println!("couldn't bootstrap cluster yet {:?}", read_body(resp).await);
+                    tokio::time::sleep(Duration::from_secs(1)).await;
+                }
+                Err(err) => {
+                    println!("couldn't bootstrap cluster yet {}", err);
                     tokio::time::sleep(Duration::from_secs(1)).await;
                 }
             }
-        }
+        },
+        _ => {}
     }
     let mut connection: Option<Addr<CCFSWsClient>> = None;
     loop {

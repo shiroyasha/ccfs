@@ -63,7 +63,7 @@ pub enum Error {
     ParseUuid { source: uuid::Error, text: String },
 
     #[snafu(display("Request failed: {}", response))]
-    Unsuccessful { response: String },
+    Unsuccessful { url: String, response: String },
 
     #[snafu(display("Request to {} failed: {}", url, source))]
     FailedRequest {

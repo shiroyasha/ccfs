@@ -22,19 +22,26 @@ use uuid::Uuid;
 
 type Response = ClientResponse<Decompress<Payload>>;
 
-pub async fn list(c: &Client, meta_url: &str) -> CCFSResult<()> {
-    let file: FileMetadata = get_request_json(c, &format!("{}/api/files", meta_url)).await?;
+pub async fn list(c: &Client, client_id: &Uuid, meta_url: &str) -> CCFSResult<()> {
+    let file: FileMetadata =
+        get_request_json(c, &format!("{}/api/files", meta_url), client_id).await?;
     println!("{}", file.print_current_dir()?);
     Ok(())
 }
 
-pub async fn tree(c: &Client, meta_url: &str) -> CCFSResult<()> {
-    let file: FileMetadata = get_request_json(c, &format!("{}/api/files", meta_url)).await?;
+pub async fn tree(c: &Client, client_id: &Uuid, meta_url: &str) -> CCFSResult<()> {
+    let file: FileMetadata =
+        get_request_json(c, &format!("{}/api/files", meta_url), client_id).await?;
     println!("{}", file.print_subtree());
     Ok(())
 }
 
-pub async fn upload<T: AsRef<Path>>(c: &Client, meta_url: &str, file_path: T) -> CCFSResult<()> {
+pub async fn upload<T: AsRef<Path>>(
+    c: &Client,
+    client_id: &Uuid,
+    meta_url: &str,
+    file_path: T,
+) -> CCFSResult<()> {
     let path = file_path.as_ref().to_path_buf();
     if !path.exists() {
         return Err(FileNotExist { path }.build().into());
@@ -43,7 +50,7 @@ pub async fn upload<T: AsRef<Path>>(c: &Client, meta_url: &str, file_path: T) ->
     let path_prefix = path.parent().map(|p| p.to_path_buf()).unwrap_or_default();
     let mut paths = vec![path];
     while let Some(curr) = paths.pop() {
-        upload_item(c, meta_url, curr.as_path(), &path_prefix).await?;
+        upload_item(c, meta_url, curr.as_path(), &path_prefix, client_id).await?;
         if curr.is_dir() {
             paths.extend(
                 curr.read_dir()
@@ -60,7 +67,13 @@ pub async fn upload<T: AsRef<Path>>(c: &Client, meta_url: &str, file_path: T) ->
     Ok(())
 }
 
-pub async fn upload_item(c: &Client, meta_url: &str, path: &Path, prefix: &Path) -> CCFSResult<()> {
+pub async fn upload_item(
+    c: &Client,
+    meta_url: &str,
+    path: &Path,
+    prefix: &Path,
+    client_id: &Uuid,
+) -> CCFSResult<()> {
     let mut chunks = Vec::new();
     let file_meta = path.metadata().context(errors::Read { path })?;
     let file_name = path.file_name().unwrap().to_str().unwrap().to_string();
@@ -74,10 +87,10 @@ pub async fn upload_item(c: &Client, meta_url: &str, path: &Path, prefix: &Path)
     let relative_path = path.strip_prefix(prefix).unwrap();
     let target_dir = relative_path.parent().unwrap().display();
     let upload_url = format!("{}/api/files/upload?path={}", meta_url, target_dir);
-    let mut resp = post_request(c, &upload_url, file_data).await?;
+    let mut resp = post_request(c, &upload_url, file_data, client_id).await?;
     let file: FileMetadata = resp.json().await.context(ParseJson)?;
     if let FileInfo::File { id, .. } = &file.file_info {
-        upload_file(c, meta_url, id, chunks, path).await?;
+        upload_file(c, meta_url, id, chunks, path, client_id).await?;
     }
     return Ok(());
 }
@@ -92,9 +105,10 @@ pub async fn upload_file(
     file_id: &Uuid,
     chunks: Vec<Uuid>,
     path: &Path,
+    client_id: &Uuid,
 ) -> CCFSResult<()> {
     let servers: Vec<ChunkServer> =
-        get_request_json(c, &format!("{}/api/servers", meta_url)).await?;
+        get_request_json(c, &format!("{}/api/servers", meta_url), client_id).await?;
     if servers.is_empty() {
         return Err(NoAvailableServers.build().into());
     }
@@ -141,12 +155,19 @@ pub async fn upload_chunk(
         if resp.status().is_success() {
             return Ok(());
         }
+        println!(
+            "failed to upload chunk {} to server {:?}\nreason: {:?}",
+            chunk_id,
+            server,
+            read_body(resp).await
+        );
     }
     Err(UploadSingleChunk { part, chunk_id }.build().into())
 }
 
 pub async fn download<T: AsRef<Path>>(
     c: &Client,
+    client_id: &Uuid,
     meta_url: &str,
     path: T,
     target_path: Option<&Path>,
@@ -154,7 +175,7 @@ pub async fn download<T: AsRef<Path>>(
 ) -> CCFSResult<()> {
     // get chunks and merge them into a file
     let file_url = format!("{}/api/files?path={}", meta_url, path.as_ref().display());
-    let file: FileMetadata = get_request_json(c, &file_url).await?;
+    let file: FileMetadata = get_request_json(c, &file_url, client_id).await?;
     let target_path = target_path
         .unwrap_or_else(|| Path::new(CURR_DIR))
         .to_path_buf();
@@ -179,7 +200,7 @@ pub async fn download<T: AsRef<Path>>(
                 .await
                 .context(errors::Create { path: curr_path })?;
         } else {
-            download_file(c, meta_url, &curr_f, &curr_dir).await?;
+            download_file(c, meta_url, &curr_f, &curr_dir, client_id).await?;
         }
     }
 
@@ -195,12 +216,14 @@ pub async fn download_file(
     meta_url: &str,
     file: &FileMetadata,
     target_dir: &Path,
+    client_id: &Uuid,
 ) -> CCFSResult<()> {
     if let FileInfo::File { id, chunks, .. } = &file.file_info {
         let chunks_url = format!("{}/api/chunks/file/{}", meta_url, id);
         let target_path = target_dir.join(&file.name);
         let path = target_path.as_path();
-        let chunk_groups: Vec<Vec<Chunk>> = get_request_json(c, &chunks_url).await?;
+        let chunk_groups: Vec<Vec<Chunk>> = get_request_json(c, &chunks_url, client_id).await?;
+        println!("download file path: {}", path.display());
         let groups: Vec<Vec<Chunk>> = chunk_groups
             .iter()
             .filter(|chunks| !chunks.is_empty())
@@ -212,7 +235,7 @@ pub async fn download_file(
         let mut file = File::create(path).await.context(errors::Create { path })?;
         let requests = groups
             .iter()
-            .map(|group| download_chunk(c, group, meta_url));
+            .map(|group| download_chunk(c, group, meta_url, client_id));
         let mut responses: HashMap<Uuid, Response> = join_all(requests)
             .await
             .into_iter()
@@ -239,13 +262,14 @@ pub async fn download_chunk(
     c: &Client,
     chunks: &[Chunk],
     meta_url: &str,
+    client_id: &Uuid,
 ) -> CCFSResult<(Uuid, Response)> {
     let chunk_name = chunks[0].chunk_name();
     for chunk in chunks {
         let chunk_servers_url = format!("{}/api/servers/{}", meta_url, &chunk.server_id);
-        let server: ChunkServer = get_request_json(c, &chunk_servers_url).await?;
+        let server: ChunkServer = get_request_json(c, &chunk_servers_url, client_id).await?;
         let download_url = format!("{}/api/download/{}", server.address, chunk.chunk_name());
-        let download_resp = get_request(c, &download_url).await?;
+        let download_resp = get_request(c, &download_url, client_id).await?;
         if download_resp.status().is_success() {
             return Ok((chunk.id, download_resp));
         }
@@ -253,9 +277,10 @@ pub async fn download_chunk(
     Err(ChunkNotAvailable { chunk_name }.build().into())
 }
 
-async fn get_request(c: &Client, url: &str) -> CCFSResult<Response> {
+async fn get_request(c: &Client, url: &str, client_id: &Uuid) -> CCFSResult<Response> {
     let resp = c
         .get(url)
+        .insert_header(("x-ccfs-client-id", client_id.to_string()))
         .send()
         .await
         .context(errors::FailedRequest { url })?;
@@ -263,19 +288,29 @@ async fn get_request(c: &Client, url: &str) -> CCFSResult<Response> {
         true => Ok(resp),
         false => {
             let response = read_body(resp).await?;
-            Err(errors::Unsuccessful { response }.build().into())
+            Err(errors::Unsuccessful { url, response }.build().into())
         }
     }
 }
 
-async fn get_request_json<T: DeserializeOwned>(c: &Client, url: &str) -> CCFSResult<T> {
-    let mut resp = get_request(c, url).await?;
+async fn get_request_json<T: DeserializeOwned>(
+    c: &Client,
+    url: &str,
+    client_id: &Uuid,
+) -> CCFSResult<T> {
+    let mut resp = get_request(c, url, client_id).await?;
     Ok(resp.json().await.context(ParseJson)?)
 }
 
-async fn post_request<T: Serialize>(c: &Client, url: &str, data: T) -> CCFSResult<Response> {
+async fn post_request<T: Serialize>(
+    c: &Client,
+    url: &str,
+    data: T,
+    client_id: &Uuid,
+) -> CCFSResult<Response> {
     let resp = c
         .post(url)
+        .insert_header(("x-ccfs-client-id", client_id.to_string()))
         .send_json(&data)
         .await
         .context(errors::FailedRequest { url })?;
@@ -283,7 +318,7 @@ async fn post_request<T: Serialize>(c: &Client, url: &str, data: T) -> CCFSResul
         true => Ok(resp),
         false => {
             let response = read_body(resp).await?;
-            Err(errors::Unsuccessful { response }.build().into())
+            Err(errors::Unsuccessful { url, response }.build().into())
         }
     }
 }

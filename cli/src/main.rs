@@ -10,6 +10,7 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 use structopt::StructOpt;
 use tokio::fs::read_to_string;
+use uuid::Uuid;
 
 #[derive(Debug, StructOpt)]
 /// Chop-Chop File System
@@ -66,14 +67,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .ok_or_else(|| CCFSResponseError::from(MissingConfigVal { key }.build()))?;
 
     let client = Client::new();
+    let client_id = Uuid::new_v4();
     match opts.cmd {
-        Command::Upload { file_path } => upload(&client, &meta_url, &file_path).await?,
+        Command::Upload { file_path } => upload(&client, &client_id, &meta_url, &file_path).await?,
         Command::Download { file_path } => {
-            download(&client, &meta_url, &file_path, None, false).await?
+            download(&client, &client_id, &meta_url, &file_path, None, false).await?
         }
         Command::Remove { file_path: _path } => unimplemented!(),
-        Command::List => list(&client, &meta_url).await?,
-        Command::Tree => tree(&client, &meta_url).await?,
+        Command::List => list(&client, &client_id, &meta_url).await?,
+        Command::Tree => tree(&client, &client_id, &meta_url).await?,
     };
     Ok(())
 }

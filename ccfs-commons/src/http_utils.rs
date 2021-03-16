@@ -58,8 +58,11 @@ pub async fn handle_file(mut data: Field, path: &Path) -> CCFSResult<()> {
     Ok(())
 }
 
-pub fn get_header<'a>(headers: &'a HeaderMap, key: &'a str) -> Option<&'a str> {
-    headers.get(key)?.to_str().ok()
+pub fn get_header<'a>(headers: &'a HeaderMap, key: &'a str) -> Result<&'a str, Error> {
+    headers
+        .get(key)
+        .map(|v| v.to_str().map_err(|_| Error::MissingHeader))
+        .ok_or(Error::MissingHeader)?
 }
 
 pub fn create_ccfs_multipart<T: AsyncRead + Unpin>(

@@ -1,9 +1,6 @@
 use actix::*;
 use actix_web::{web, App, HttpServer};
-use async_raft::{storage, Config};
-use ccfs_commons::http_utils::get_ip;
-use ccfs_commons::FileMetadata;
-use ccfs_commons::{errors, result::CCFSResult};
+use async_raft::Config;
 // use metadata_server::jobs::replication;
 use metadata_server::raft::network::CCFSNetwork;
 use metadata_server::raft::storage::CCFSStorage;
@@ -13,46 +10,36 @@ use metadata_server::routes::api::{
     signal_chuck_upload_completed,
 };
 use metadata_server::routes::raft::{bootstrap, join_cluster, vote};
+use metadata_server::server_config::ServerConfig;
 use metadata_server::ws::{cluster::Cluster, SetRaftNode};
-use metadata_server::{bootstrap_cluster, ChunksMap, FileMetadataTree, FilesMap, ServersMap};
-use metadata_server::{errors::*, server_config::ServerConfig};
-use snafu::ResultExt;
+use metadata_server::{bootstrap_cluster, ServersMap};
 use std::collections::{HashMap, HashSet};
 use std::env::{self, VarError};
-use std::fs::File;
-use std::path::Path;
 use std::sync::Arc;
 use tokio::sync::{Mutex, RwLock};
 use tokio::task;
 
-async fn init_metadata_tree(path: &Path) -> CCFSResult<FileMetadataTree> {
-    let tree = match path.exists() {
-        true => {
-            let file = File::open(path).context(errors::Read { path })?;
-            bincode::deserialize_from(&file).context(Deserialize)?
-        }
-        false => FileMetadata::create_root(),
-    };
-    Ok(Arc::new(RwLock::new(tree)))
-}
+// async fn init_metadata_tree(path: &Path) -> CCFSResult<FileMetadata> {
+//     let tree = match path.exists() {
+//         true => {
+//             let file = File::open(path).context(errors::Read { path })?;
+//             bincode::deserialize_from(&file).context(Deserialize)?
+//         }
+//         false => FileMetadata::create_root(),
+//     };
+//     Ok(tree)
+// }
 
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
     let config_file_path = env::var("CONFIG_PATH").unwrap_or_else(|_| "./ms_config.yml".into());
+    let bootstrap_url = env::var("BOOTSTRAP_URL").ok();
     let bootstrap_size = env::var("BOOTSTRAP_SIZE")
         .and_then(|v| v.parse::<usize>().map_err(|_err| VarError::NotPresent))
         .unwrap_or(0);
     let config = Arc::new(ServerConfig::load_config(&config_file_path)?);
-    let server_ip = get_ip().unwrap_or_else(|| "127.0.0.1".into());
-    let server_address = format!("http://{}:{}", server_ip, &config.port);
 
     let chunk_servers: ServersMap = Arc::new(RwLock::new(HashMap::new()));
-    let chunks: ChunksMap = Arc::new(RwLock::new(HashMap::new()));
-    let files: FilesMap = Arc::new(RwLock::new(HashMap::new()));
-    let tree = init_metadata_tree(&config.snapshot_path())
-        .await
-        .unwrap_or_else(|err| panic!("Couldn't init metadata tree: {:?}", err));
-
     let raft_config = Config::build("ccfs_metadata_server_cluster".into())
         .election_timeout_max(1500)
         .election_timeout_min(1000)
@@ -60,6 +47,7 @@ async fn main() -> std::io::Result<()> {
         .replication_lag_threshold(2000)
         .validate()
         .unwrap_or_else(|err| panic!("Couldn't create raft config: {:?}", err));
+    let server_address = config.full_address();
     let cluster = Cluster::new(config.id, &server_address).start();
     let network = Arc::new(CCFSNetwork::new(cluster.clone()));
     let storage = Arc::new(CCFSStorage::new(config.id));
@@ -80,6 +68,7 @@ async fn main() -> std::io::Result<()> {
         raft_node.clone(),
         server_address,
         cluster.clone(),
+        bootstrap_url,
         bootstrap_size,
     ));
     // task::spawn_local(replication::start_replication_job(
@@ -93,9 +82,6 @@ async fn main() -> std::io::Result<()> {
     HttpServer::new(move || {
         App::new()
             .data(chunk_servers.clone())
-            .data(chunks.clone())
-            .data(files.clone())
-            .data(tree.clone())
             .data(raft_node.clone())
             .data(storage.clone())
             .data(cluster.clone())
