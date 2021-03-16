@@ -1,22 +1,22 @@
-use crate::FileMetadataTree;
-use crate::{ChunksMap, ServersMap};
+use crate::raft::storage::CCFSStorage;
+use crate::ServersMap;
 use actix_web::client::Client;
 use ccfs_commons::result::CCFSResult;
 use ccfs_commons::{Chunk, ChunkServer, FileInfo, FileMetadata};
 use futures::future::{join_all, FutureExt, LocalBoxFuture};
 use std::collections::{HashMap, HashSet};
+use std::sync::Arc;
 use tokio::time::{sleep, Duration};
 use uuid::Uuid;
 
 pub async fn start_replication_job(
     sleep_interval: u64,
-    tree: FileMetadataTree,
-    chunks: ChunksMap,
+    storage: Arc<CCFSStorage>,
     servers: ServersMap,
 ) {
     loop {
         sleep(Duration::from_secs(sleep_interval)).await;
-        if let Err(err) = replicate_files(tree.clone(), chunks.clone(), servers.clone(), 3).await {
+        if let Err(err) = replicate_files(storage.clone(), servers.clone(), 3).await {
             // TODO: replace with logger
             println!("Error while creating replicas: {:?}", err);
         } else {
@@ -26,15 +26,13 @@ pub async fn start_replication_job(
 }
 
 fn replicate_files(
-    tree: FileMetadataTree,
-    chunks_map: ChunksMap,
+    storage: Arc<CCFSStorage>,
     servers_map: ServersMap,
     required_replicas: usize,
 ) -> LocalBoxFuture<'static, CCFSResult<()>> {
     let c = Client::new();
     async move {
-        let files_tree = tree.read().await.clone();
-        let chunks = chunks_map.read().await.clone();
+        let lock = storage.state_machine_read().await;
         let servers = servers_map.read().await.clone();
 
         let active_servers = servers
@@ -44,11 +42,21 @@ fn replicate_files(
                 false => None,
             })
             .collect::<HashSet<_>>();
-        let files = files_tree
+        let files = lock
+            .state
+            .tree
             .dfs_iter()
             .filter(|f| matches!(f.file_info, FileInfo::File { .. }));
-        let futures = files
-            .map(|f| replicate_file(&c, f, &chunks, &active_servers, &servers, required_replicas));
+        let futures = files.map(|f| {
+            replicate_file(
+                &c,
+                f,
+                &lock.state.chunks,
+                &active_servers,
+                &servers,
+                required_replicas,
+            )
+        });
         join_all(futures).await;
         Ok(())
     }
