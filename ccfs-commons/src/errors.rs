@@ -59,6 +59,15 @@ pub enum Error {
     #[snafu(display("Unable to parse to String: '{}'", source))]
     ParseString { source: std::string::FromUtf8Error },
 
+    #[snafu(display("Unable to read response body as String: '{}'", source))]
+    ReadString { source: reqwest::Error },
+
+    #[snafu(display("Unable to parse '{}' to int: '{}'", text, source))]
+    ParseInt {
+        source: std::num::ParseIntError,
+        text: String,
+    },
+
     #[snafu(display("Unable to parse uuid '{}': {}", text, source))]
     ParseUuid { source: uuid::Error, text: String },
 
@@ -66,10 +75,7 @@ pub enum Error {
     Unsuccessful { url: String, response: String },
 
     #[snafu(display("Request to {} failed: {}", url, source))]
-    FailedRequest {
-        source: actix_web::client::SendRequestError,
-        url: String,
-    },
+    FailedRequest { source: reqwest::Error, url: String },
 
     #[snafu(display("'{}' is not a directory", path.display()))]
     NotADir { path: PathBuf },
@@ -102,10 +108,13 @@ impl ResponseError for Error {
             | NotAFile { .. }
             | NotExist { .. }
             | FailedRequest { .. }
+            | ReadString { .. }
             | Unsuccessful { .. } => ErrorInternalServerError(display).into(),
-            InvalidPath { .. } | ParseString { .. } | ParseUuid { .. } | MissingHeader => {
-                ErrorBadRequest(display).into()
-            }
+            InvalidPath { .. }
+            | ParseString { .. }
+            | ParseUuid { .. }
+            | ParseInt { .. }
+            | MissingHeader => ErrorBadRequest(display).into(),
         }
     }
 }

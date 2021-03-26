@@ -47,7 +47,6 @@ static_resources:
           grpc_services:
           - envoy_grpc:
               cluster_name: eds_cluster
-          refresh_delay: 5s
   - name: eds_cluster
     type: STRICT_DNS
     connect_timeout: 0.25s

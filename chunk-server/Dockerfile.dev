@@ -22,4 +22,5 @@ RUN cargo build --release --bin chunk-server
 FROM debian:buster as runtime
 WORKDIR /app
 COPY --from=builder /app/target/release/chunk-server /usr/local/bin
+RUN apt-get update && apt-get install -y pkg-config libssl-dev
 ENTRYPOINT ["/usr/local/bin/chunk-server"]

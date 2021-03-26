@@ -1,7 +1,6 @@
 mod errors;
 mod file_ops;
 
-use actix_web::client::Client;
 use ccfs_commons::errors::{self as base, CCFSResponseError};
 use errors::*;
 use file_ops::{download, list, tree, upload};
@@ -11,6 +10,7 @@ use std::path::PathBuf;
 use structopt::StructOpt;
 use tokio::fs::read_to_string;
 use uuid::Uuid;
+use reqwest::Client;
 
 #[derive(Debug, StructOpt)]
 /// Chop-Chop File System

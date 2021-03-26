@@ -25,8 +25,8 @@ services:
 
   eds:
     build:
-        context: ./dev_env/eds_server
-        dockerfile: ./Dockerfile.dev
+      context: ./dev_env/eds_server
+      dockerfile: ./Dockerfile.dev
     ports:
       - 8080:8080
       - 5000:5000
@@ -49,38 +49,38 @@ services:
       - ./dev_env/current_host:/app/current_host
     environment:
       CONFIG_PATH: ./metadata-server/dev_configs/ms_config1.yml
-      BOOTSTRAP_SIZE: 1
+      BOOTSTRAP_SIZE: 3
       BOOTSTRAP_URL: http://meta_server_001:4001
 
-  # meta_server_002:
-  #   build:
-  #     context: .
-  #     dockerfile: ./metadata-server/Dockerfile.dev
-  #   ports:
-  #     - "4002:4002"
-  #   volumes:
-  #     - ./ccfs-commons:/app/ccfs-commons
-  #     - ./metadata-server:/app/metadata-server
-  #     - ./dev_env/current_host:/app/current_host
-  #   environment:
-  #     CONFIG_PATH: ./metadata-server/dev_configs/ms_config2.yml
-  #     BOOTSTRAP_SIZE: 3
-  #     BOOTSTRAP_URL: http://meta_server_001:4001
+  meta_server_002:
+    build:
+      context: .
+      dockerfile: ./metadata-server/Dockerfile.dev
+    ports:
+      - "4002:4002"
+    volumes:
+      - ./ccfs-commons:/app/ccfs-commons
+      - ./metadata-server:/app/metadata-server
+      - ./dev_env/current_host:/app/current_host
+    environment:
+      CONFIG_PATH: ./metadata-server/dev_configs/ms_config2.yml
+      BOOTSTRAP_SIZE: 3
+      BOOTSTRAP_URL: http://meta_server_001:4001
 
-  # meta_server_003:
-  #   build:
-  #     context: .
-  #     dockerfile: ./metadata-server/Dockerfile.dev
-  #   ports:
-  #     - "4003:4003"
-  #   volumes:
-  #     - ./ccfs-commons:/app/ccfs-commons
-  #     - ./metadata-server:/app/metadata-server
-  #     - ./dev_env/current_host:/app/current_host
-  #   environment:
-  #     CONFIG_PATH: ./metadata-server/dev_configs/ms_config3.yml
-  #     BOOTSTRAP_SIZE: 3
-  #     BOOTSTRAP_URL: http://meta_server_001:4001
+  meta_server_003:
+    build:
+      context: .
+      dockerfile: ./metadata-server/Dockerfile.dev
+    ports:
+      - "4003:4003"
+    volumes:
+      - ./ccfs-commons:/app/ccfs-commons
+      - ./metadata-server:/app/metadata-server
+      - ./dev_env/current_host:/app/current_host
+    environment:
+      CONFIG_PATH: ./metadata-server/dev_configs/ms_config3.yml
+      BOOTSTRAP_SIZE: 3
+      BOOTSTRAP_URL: http://meta_server_001:4001
 
   #
   # Three chunk servers.

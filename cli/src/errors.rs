@@ -12,14 +12,7 @@ pub enum Error {
     Base { source: BaseError },
 
     #[snafu(display("Unable to parse to json: {}", source))]
-    ParseJson {
-        source: actix_web::client::JsonPayloadError,
-    },
-
-    #[snafu(display("Unable to read payload: {}", source))]
-    ParseBytes {
-        source: actix_web::client::PayloadError,
-    },
+    ParseJson { source: reqwest::Error },
 
     #[snafu(display("Unable to parse yaml: {}", source))]
     ParseYaml { source: serde_yaml::Error },
@@ -58,9 +51,7 @@ impl<'a> ResponseError for Error {
         let display = format!("{}", self);
         match self {
             Base { source } => source.error_response(),
-            ParseJson { .. } | ParseBytes { .. } | ParseYaml { .. } => {
-                ErrorBadRequest(display).into()
-            }
+            ParseJson { .. } | ParseYaml { .. } => ErrorBadRequest(display).into(),
             ChunkNotAvailable { .. }
             | SomeChunksNotAvailable { .. }
             | UploadChunks { .. }

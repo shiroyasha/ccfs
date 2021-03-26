@@ -1,6 +1,7 @@
 use actix::*;
 use actix_web::{web, App, HttpServer};
 use async_raft::Config;
+use metadata_server::middleware::RedirectToLeader;
 // use metadata_server::jobs::replication;
 use metadata_server::raft::network::CCFSNetwork;
 use metadata_server::raft::storage::CCFSStorage;
@@ -9,10 +10,10 @@ use metadata_server::routes::api::{
     chunk_server_ping, create_file, get_chunks, get_file, get_server, get_servers,
     signal_chuck_upload_completed,
 };
-use metadata_server::routes::raft::{bootstrap, join_cluster, vote};
+use metadata_server::routes::raft::{bootstrap, get_leader_address, join_cluster, vote};
 use metadata_server::server_config::ServerConfig;
 use metadata_server::ws::{cluster::Cluster, SetRaftNode};
-use metadata_server::{bootstrap_cluster, ServersMap};
+use metadata_server::{connect_to_cluster, ServersMap};
 use std::collections::{HashMap, HashSet};
 use std::env::{self, VarError};
 use std::sync::Arc;
@@ -63,7 +64,7 @@ async fn main() -> std::io::Result<()> {
         node: Arc::clone(&raft_node),
     });
 
-    task::spawn_local(bootstrap_cluster(
+    task::spawn_local(connect_to_cluster(
         config.id,
         raft_node.clone(),
         server_address,
@@ -90,6 +91,7 @@ async fn main() -> std::io::Result<()> {
             .data(bootstrap_size)
             .service(
                 web::scope("/api")
+                    .wrap(RedirectToLeader)
                     .service(get_servers)
                     .service(get_server)
                     .service(chunk_server_ping)
@@ -102,7 +104,8 @@ async fn main() -> std::io::Result<()> {
                 web::scope("/raft")
                     .service(web::resource("/ws").route(web::get().to(join_cluster)))
                     .service(vote)
-                    .service(bootstrap),
+                    .service(bootstrap)
+                    .service(get_leader_address),
             )
     })
     .bind(&address)?

@@ -5,27 +5,25 @@ pub mod server;
 use crate::raft::data::ClientRequest;
 use crate::raft::CCFSRaft;
 use actix::prelude::*;
+use anyhow::Error;
 use async_raft::raft::{
     AppendEntriesRequest, AppendEntriesResponse, InstallSnapshotRequest, InstallSnapshotResponse,
     VoteRequest, VoteResponse,
 };
 use futures::channel::oneshot::Sender;
 use serde::{Deserialize, Serialize};
-use std::fmt::{self, Display};
+use std::collections::HashMap;
 use std::sync::Arc;
 
 /// Leader sends this message to followers
 #[derive(Message, Serialize, Deserialize)]
 #[rtype(result = "()")]
 pub enum Message {
-    Text(TextMessage),
     Request(RequestMessage),
+    Response(ResponseMessage),
+    Register(RegisterAddress),
+    UpdateAddrs(UpdateAddresses),
 }
-
-/// Leader sends this message to followers
-#[derive(Message, Serialize, Deserialize)]
-#[rtype(result = "()")]
-pub struct TextMessage(pub String);
 
 /// Leader sends this message to followers
 #[derive(Message, Serialize, Deserialize)]
@@ -48,14 +46,24 @@ pub enum ResponseMessage {
 /// Leader receives this message from followers
 #[derive(Message, Serialize, Deserialize)]
 #[rtype(result = "()")]
-pub struct NodeAddress {
+pub struct UpdateAddresses {
+    pub req_id: uuid::Uuid,
+    pub addresses: HashMap<u64, String>,
+}
+
+/// Leader receives this message from followers
+#[derive(Message, Serialize, Deserialize, Debug)]
+#[rtype(result = "()")]
+pub struct RegisterAddress {
     pub id: u64,
     pub address: String,
 }
-impl Display for NodeAddress {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}|{}", self.id, self.address)
-    }
+
+/// Message to request the nodes address from the cluster
+#[derive(Message, Serialize, Deserialize)]
+#[rtype(result = "Option<String>")]
+pub struct GetAddress {
+    pub id: u64,
 }
 
 /// Update raft node for cluster
@@ -86,6 +94,8 @@ pub struct Disconnect {
 pub struct AppendRequest {
     /// Id of the target node
     pub id: u64,
+    /// Request Id
+    pub req_id: uuid::Uuid,
     /// Peer message
     pub request: AppendEntriesRequest<ClientRequest>,
     #[serde(skip)]
@@ -98,6 +108,8 @@ pub struct AppendRequest {
 pub struct AppendResponse {
     /// Id of the target node
     pub id: u64,
+    /// Request Id
+    pub req_id: uuid::Uuid,
     /// Peer message
     pub response: AppendEntriesResponse,
 }
@@ -108,6 +120,8 @@ pub struct AppendResponse {
 pub struct SnapshotRequest {
     /// Id of the target node
     pub id: u64,
+    /// Request Id
+    pub req_id: uuid::Uuid,
     /// Peer message
     pub request: InstallSnapshotRequest,
     #[serde(skip)]
@@ -120,20 +134,20 @@ pub struct SnapshotRequest {
 pub struct SnapshotResponse {
     /// Id of the target node
     pub id: u64,
+    /// Request Id
+    pub req_id: uuid::Uuid,
     /// Peer message
     pub response: InstallSnapshotResponse,
 }
 
 /// Send message
 #[derive(Message, Serialize, Deserialize)]
-#[rtype(result = "()")]
+#[rtype(result = "Result<VoteResponse, Error>")]
 pub struct VotingRequest {
     /// Id of the target node
     pub id: u64,
     /// Peer message
     pub request: VoteRequest,
-    #[serde(skip)]
-    pub tx: Option<Sender<VoteResponse>>,
 }
 
 /// Send message

@@ -30,6 +30,9 @@ pub enum Error {
     ClientWrite {
         source: ClientWriteError<ClientRequest>,
     },
+
+    #[snafu(display("Couldn't create websocket connection: {}", source))]
+    WsConnect { source: actix_web::Error },
 }
 
 impl<'a> ResponseError for Error {
@@ -39,7 +42,7 @@ impl<'a> ResponseError for Error {
         match self {
             Base { source } => source.error_response(),
             Deserialize { .. } | MissingParam { .. } => ErrorBadRequest(display).into(),
-            NotFound { .. } | ClientRead { .. } | ClientWrite { .. } => {
+            NotFound { .. } | ClientRead { .. } | ClientWrite { .. } | WsConnect { .. } => {
                 ErrorInternalServerError(display).into()
             }
         }

@@ -1,9 +1,9 @@
 use crate::raft::storage::CCFSStorage;
 use crate::ServersMap;
-use actix_web::client::Client;
 use ccfs_commons::result::CCFSResult;
 use ccfs_commons::{Chunk, ChunkServer, FileInfo, FileMetadata};
 use futures::future::{join_all, FutureExt, LocalBoxFuture};
+use reqwest::Client;
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use tokio::time::{sleep, Duration};
@@ -14,9 +14,10 @@ pub async fn start_replication_job(
     storage: Arc<CCFSStorage>,
     servers: ServersMap,
 ) {
+    let c = Client::new();
     loop {
         sleep(Duration::from_secs(sleep_interval)).await;
-        if let Err(err) = replicate_files(storage.clone(), servers.clone(), 3).await {
+        if let Err(err) = replicate_files(c.clone(), storage.clone(), servers.clone(), 3).await {
             // TODO: replace with logger
             println!("Error while creating replicas: {:?}", err);
         } else {
@@ -26,11 +27,11 @@ pub async fn start_replication_job(
 }
 
 fn replicate_files(
+    c: Client,
     storage: Arc<CCFSStorage>,
     servers_map: ServersMap,
     required_replicas: usize,
 ) -> LocalBoxFuture<'static, CCFSResult<()>> {
-    let c = Client::new();
     async move {
         let lock = storage.state_machine_read().await;
         let servers = servers_map.read().await.clone();
@@ -124,9 +125,9 @@ async fn send_replication_requests(
             let target_server = &servers_map.get(s_id)?.address;
             Some(
                 c.post(format!("{}/api/replicate", &from_server))
-                    .insert_header(("x-ccfs-chunk-id", chunk_id.to_string()))
-                    .insert_header(("x-ccfs-file-id", file_id.to_string()))
-                    .insert_header(("x-ccfs-server-url", target_server.clone()))
+                    .header("x-ccfs-chunk-id", chunk_id.to_string())
+                    .header("x-ccfs-file-id", file_id.to_string())
+                    .header("x-ccfs-server-url", target_server.clone())
                     .send(),
             )
         });

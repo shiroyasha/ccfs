@@ -1,20 +1,19 @@
 use crate::errors::*;
 use crate::{MetadataUrl, ServerID, UploadsDir};
 use actix_multipart::Multipart;
-use actix_web::http::header::CONTENT_TYPE;
-use actix_web::{body::BodyStream, client::Client, get, post, HttpResponse};
+use actix_web::{get, post, HttpResponse};
 use actix_web::{web::Data, web::Path, HttpRequest};
-use ccfs_commons::http_utils::{
-    create_ccfs_multipart, get_header, handle_file, handle_string, read_body,
-};
+use ccfs_commons::http_utils::{create_ccfs_multipart, get_header, handle_file, handle_string};
 use ccfs_commons::{chunk_name, errors, result::CCFSResult, Chunk};
 use futures::TryStreamExt;
+use reqwest::{Body, Client};
 use snafu::ResultExt;
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::str::FromStr;
 use tempfile::tempdir;
 use tokio::fs::{rename, File};
+use tokio_util::codec::{BytesCodec, FramedRead};
 use tokio_util::io::ReaderStream;
 use uuid::Uuid;
 
@@ -64,8 +63,9 @@ pub async fn upload(
 
     let resp = Client::new()
         .post(&format!("{}/api/chunk/completed", **meta_url))
-        .insert_header(("x-ccfs-client-id", &*server.to_string()))
-        .send_json(&chunk)
+        .header("x-ccfs-client-id", &*server.to_string())
+        .json(&chunk)
+        .send()
         .await
         .map_err(|err| {
             let reason = format!("{}", err);
@@ -74,7 +74,7 @@ pub async fn upload(
     match resp.status().is_success() {
         true => Ok(HttpResponse::Ok().finish()),
         false => {
-            let reason = read_body(resp).await?;
+            let reason = resp.text().await.context(errors::ReadString)?;
             Err(MetaServerCommunication { reason }.build().into())
         }
     }
@@ -97,21 +97,18 @@ pub async fn replicate(request: HttpRequest, dir: Data<UploadsDir>) -> CCFSResul
     let path = dir.join(&chunk_file_name);
 
     let f = File::open(&path).await.context(errors::Open { path })?;
-    let stream = ReaderStream::new(f);
-    let mpart = create_ccfs_multipart(chunk_id, file_id, stream);
+    let stream = FramedRead::new(f, BytesCodec::new());
+    let mpart = create_ccfs_multipart(chunk_id, file_id, Body::wrap_stream(stream));
 
     let url = format!("{}/api/upload", server_url);
     let resp = Client::new()
         .post(&url)
-        .insert_header((
-            CONTENT_TYPE,
-            format!("multipart/form-data; boundary={}", &mpart.get_boundary()),
-        ))
-        .send_body(BodyStream::new(Box::new(mpart)))
+        .multipart(mpart)
+        .send()
         .await
         .context(errors::FailedRequest { url: &url })?;
     if !resp.status().is_success() {
-        let response = read_body(resp).await?;
+        let response = resp.text().await.context(errors::ReadString)?;
         return Err(errors::Unsuccessful { url, response }.build().into());
     }
     Ok(HttpResponse::Ok().finish())

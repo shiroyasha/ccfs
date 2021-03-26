@@ -1,7 +1,7 @@
 use super::data::ClientRequest;
 use crate::ws::{cluster::Cluster, AppendRequest, SnapshotRequest, VotingRequest};
 use actix::Addr;
-use anyhow::Result;
+use anyhow::{anyhow, Result};
 use async_raft::async_trait::async_trait;
 use async_raft::network::RaftNetwork;
 use async_raft::raft::{
@@ -10,6 +10,7 @@ use async_raft::raft::{
 };
 use async_raft::NodeId;
 use futures::channel::oneshot;
+use uuid::Uuid;
 
 pub struct CCFSNetwork {
     // store the active websockets when nodes establish a connection
@@ -29,20 +30,21 @@ impl RaftNetwork<ClientRequest> for CCFSNetwork {
         target: NodeId,
         rpc: AppendEntriesRequest<ClientRequest>,
     ) -> Result<AppendEntriesResponse> {
-        println!("appending entries {:?}", rpc);
+        println!("appending entries to node {} : {:?}", target, rpc);
         let (tx, rx) = oneshot::channel();
         let _resp = self
             .cluster
             .send(AppendRequest {
                 id: target,
+                req_id: Uuid::new_v4(),
                 request: rpc,
                 tx: Some(tx),
             })
             .await;
         let res = rx
             .await
-            .map_err(|err| anyhow::anyhow!("append_entries Ws Request Cancelled: {}", err));
-        println!("append_entries res {:?}", res);
+            .map_err(|err| anyhow!("append_entries Ws Request Cancelled: {}", err));
+        println!("append_entries res to node {} : {:?}", target, res);
         res
     }
 
@@ -51,39 +53,35 @@ impl RaftNetwork<ClientRequest> for CCFSNetwork {
         target: NodeId,
         rpc: InstallSnapshotRequest,
     ) -> Result<InstallSnapshotResponse> {
-        println!("install snapshot {:?}", rpc);
+        println!("install snapshot to node {} :  {:?}", target, rpc);
         let (tx, rx) = oneshot::channel();
         let _resp = self
             .cluster
             .send(SnapshotRequest {
                 id: target,
+                req_id: Uuid::new_v4(),
                 request: rpc,
                 tx: Some(tx),
             })
             .await;
         let res = rx
             .await
-            .map_err(|err| anyhow::anyhow!("install_snapshot Ws Request Cancelled: {}", err));
-        println!("install_snapshot res {:?}", res);
+            .map_err(|err| anyhow!("install_snapshot Ws Request Cancelled: {}", err));
+        println!("install_snapshot res node {} :  {:?}", target, res);
         res
     }
 
     async fn vote(&self, target: NodeId, rpc: VoteRequest) -> Result<VoteResponse> {
-        println!("vote {:?}", rpc);
-        let (tx, rx) = oneshot::channel();
-        let resp = self
+        println!("vote for node {} :  {:?}", target, rpc);
+        let res = self
             .cluster
             .send(VotingRequest {
                 id: target,
                 request: rpc,
-                tx: Some(tx),
             })
-            .await;
-        println!("{:?}", resp);
-        let res = rx
             .await
-            .map_err(|err| anyhow::anyhow!("vote Ws Request Cancelled: {}", err));
-        println!("vote res {:?}", res);
+            .map_err(|err| anyhow!("vote raft error: {}", err))?;
+        println!("vote res node {} : {:?}", target, res);
         res
     }
 }

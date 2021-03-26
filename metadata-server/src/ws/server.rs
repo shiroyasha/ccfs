@@ -1,14 +1,105 @@
 use super::cluster::Cluster;
-use super::{Connect, Disconnect, Message, NodeAddress, ResponseMessage};
+use super::{
+    AppendRequest, AppendResponse, Connect, Disconnect, Message, RegisterAddress, RequestMessage,
+    ResponseMessage, SnapshotRequest, SnapshotResponse, UpdateAddresses,
+};
+use crate::raft::CCFSRaft;
 use actix::prelude::*;
 use actix::Addr;
 use actix_web_actors::ws;
+use std::sync::Arc;
 
 pub struct CCFSWebSocket {
-    /// Node id
     node_id: u64,
-    /// Cluster server
-    addr: Addr<Cluster>,
+    node: Arc<CCFSRaft>,
+    cluster: Addr<Cluster>,
+}
+
+impl CCFSWebSocket {
+    pub fn new(node_id: u64, cluster: Addr<Cluster>, node: Arc<CCFSRaft>) -> Self {
+        Self {
+            node_id,
+            cluster,
+            node,
+        }
+    }
+
+    fn handle_request(
+        &mut self,
+        req: RequestMessage,
+        node_ref: Arc<CCFSRaft>,
+        ctx: &mut ws::WebsocketContext<Self>,
+    ) {
+        match req {
+            RequestMessage::Append(r) => {
+                let AppendRequest {
+                    id,
+                    req_id,
+                    request,
+                    ..
+                } = r;
+                println!("received append request on server {:?}", request);
+                async move { node_ref.append_entries(request).await }
+                    .into_actor(self)
+                    .then(move |res, _act, ctx| {
+                        println!("append request exec result server {:?}", res);
+                        match res {
+                            Ok(response) => {
+                                ctx.binary(
+                                    bincode::serialize(&ResponseMessage::Append(AppendResponse {
+                                        id,
+                                        req_id,
+                                        response,
+                                    }))
+                                    .expect("cannot ser AppendResponse"),
+                                );
+                            }
+                            _ => {
+                                // something is wrong with the server
+                                println!("handle append_request failed");
+                                ctx.stop();
+                            }
+                        }
+                        fut::ready(())
+                    })
+                    .wait(ctx);
+            }
+            RequestMessage::Snapshot(r) => {
+                let SnapshotRequest {
+                    id,
+                    req_id,
+                    request,
+                    ..
+                } = r;
+                async move { node_ref.install_snapshot(request).await }
+                    .into_actor(self)
+                    .then(move |res, _act, ctx| {
+                        match res {
+                            Ok(response) => {
+                                ctx.binary(
+                                    bincode::serialize(&ResponseMessage::Snapshot(
+                                        SnapshotResponse {
+                                            id,
+                                            req_id,
+                                            response,
+                                        },
+                                    ))
+                                    .expect("cannot ser SnapshotResponse"),
+                                );
+                            }
+                            _ => {
+                                // something is wrong with the server
+                                println!("handle snapshot_request failed");
+                                ctx.stop();
+                            }
+                        }
+                        fut::ready(())
+                    })
+                    .wait(ctx);
+            }
+            _ => {}
+        };
+    }
 }
 
 impl Actor for CCFSWebSocket {
@@ -17,19 +108,18 @@ impl Actor for CCFSWebSocket {
     /// Method is called on actor start.
     /// We register ws session with Cluster
     fn started(&mut self, ctx: &mut Self::Context) {
-        println!("new connection {}", self.node_id);
-        let addr = ctx.address();
-        self.addr
+        println!("server: new connection {}", self.node_id);
+        let conn = ctx.address();
+        self.cluster
             .send(Connect {
                 id: self.node_id,
-                addr: addr.recipient(),
+                addr: conn.recipient(),
             })
             .into_actor(self)
             .then(|res, _act, ctx| {
-                match res {
-                    Ok(_res) => {}
+                if res.is_err() {
                     // something is wrong with cluster server
-                    _ => ctx.stop(),
+                    ctx.stop();
                 }
                 fut::ready(())
             })
@@ -38,7 +128,7 @@ impl Actor for CCFSWebSocket {
 
     fn stopping(&mut self, _: &mut Self::Context) -> Running {
         // notify cluster server
-        self.addr.do_send(Disconnect { id: self.node_id });
+        self.cluster.do_send(Disconnect { id: self.node_id });
         Running::Stop
     }
 }
@@ -48,14 +138,13 @@ impl Handler<Message> for CCFSWebSocket {
     type Result = ();
 
     fn handle(&mut self, msg: Message, ctx: &mut Self::Context) {
-        match msg {
-            Message::Request(req) => {
-                ctx.binary(bincode::serialize(&req).expect("failed to serialize ws msg"));
-            }
-            Message::Text(text) => {
-                ctx.text(text.0);
-            }
-        }
+        let data = match msg {
+            Message::Request(req) => bincode::serialize(&req).expect("failed ws serialize"),
+            Message::Response(res) => bincode::serialize(&res).expect("failed ws serialize"),
+            Message::Register(res) => bincode::serialize(&res).expect("failed ws serialize"),
+            Message::UpdateAddrs(res) => bincode::serialize(&res).expect("failed ws serialize"),
+        };
+        ctx.binary(data);
     }
 }
 
@@ -74,21 +163,19 @@ impl StreamHandler<Result<ws::Message, ws::ProtocolError>> for CCFSWebSocket {
             ws::Message::Ping(msg) => {
                 ctx.pong(&msg);
             }
-            ws::Message::Pong(_) => {}
-            ws::Message::Text(text) => {
-                let content = text.to_string();
-                let parts = content.split_terminator('|').collect::<Vec<_>>();
-                self.addr.do_send(NodeAddress {
-                    id: parts[0].parse().unwrap(),
-                    address: parts[1].to_string(),
-                })
-            }
-            ws::Message::Binary(data) => match bincode::deserialize::<ResponseMessage>(&data) {
-                Ok(resp) => {
-                    self.addr.do_send(resp);
+            ws::Message::Binary(data) => {
+                if let Ok(resp) = bincode::deserialize::<ResponseMessage>(&data) {
+                    self.cluster.do_send(resp);
+                } else if let Ok(req) = bincode::deserialize::<RequestMessage>(&data) {
+                    self.handle_request(req, Arc::clone(&self.node), ctx);
+                } else if let Ok(addr) = bincode::deserialize::<RegisterAddress>(&data) {
+                    self.cluster.do_send(addr);
+                } else if let Ok(addresses) = bincode::deserialize::<UpdateAddresses>(&data) {
+                    self.cluster.do_send(addresses);
+                } else {
+                    println!("didn't match any above server")
                 }
-                Err(err) => println!("couldn't deser response message: {}", err),
-            },
+            }
             ws::Message::Close(reason) => {
                 ctx.close(reason);
                 ctx.stop();
@@ -96,13 +183,7 @@ impl StreamHandler<Result<ws::Message, ws::ProtocolError>> for CCFSWebSocket {
             ws::Message::Continuation(_) => {
                 ctx.stop();
             }
-            ws::Message::Nop => (),
+            _ => {}
         }
-    }
-}
-
-impl CCFSWebSocket {
-    pub fn new(node_id: u64, addr: Addr<Cluster>) -> Self {
-        Self { node_id, addr }
     }
 }

@@ -1,17 +1,17 @@
 pub mod errors;
 pub mod jobs;
+pub mod middleware;
 pub mod raft;
 pub mod routes;
 pub mod server_config;
 pub mod ws;
 
-use actix::io::SinkWrite;
-use actix::{Actor, Addr, StreamHandler};
-use awc::Client;
-use ccfs_commons::http_utils::read_body;
+use actix::Addr;
+use awc::Client as WsClient;
+use ccfs_commons::http_utils::get_header;
 use ccfs_commons::{Chunk, ChunkServer};
-use futures::StreamExt;
 use raft::CCFSRaft;
+use reqwest::Client;
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use std::time::Duration;
@@ -24,8 +24,7 @@ pub type ServersMap = Arc<RwLock<HashMap<Uuid, ChunkServer>>>;
 pub type ChunksMap = HashMap<Uuid, HashSet<Chunk>>;
 pub type FilesMap = HashMap<Uuid, String>;
 
-pub async fn update_ds(address: &str) -> Result<String, anyhow::Error> {
-    let c = Client::new();
+pub async fn update_ds(c: &Client, address: &str) -> Result<String, anyhow::Error> {
     let resp = c
         .get(format!(
             "http://eds:5000/edsservice/register?endpoint={}",
@@ -34,14 +33,13 @@ pub async fn update_ds(address: &str) -> Result<String, anyhow::Error> {
         .send()
         .await
         .map_err(|err| anyhow::anyhow!("request failed {}", err))?;
-    Ok(read_body(resp)
+    Ok(resp
+        .text()
         .await
         .map_err(|err| anyhow::anyhow!("failed to read response {}", err))?)
 }
 
-/// try to join cluster, if no response (either leader is down or the
-/// cluster is not initialized) -> update the DS to redirect to self
-pub async fn bootstrap_cluster(
+pub async fn connect_to_cluster(
     id: u64,
     node: Arc<CCFSRaft>,
     address: String,
@@ -49,86 +47,93 @@ pub async fn bootstrap_cluster(
     bootstrap_url: Option<String>,
     bootstrap_size: usize,
 ) {
-    let c = Arc::new(Client::new());
+    let c = Client::new();
+    let wsc = Arc::new(WsClient::new());
+    let mut connection: Option<Addr<CCFSWsClient>> = None;
     match (bootstrap_url, bootstrap_size) {
-        (Some(url), target_size) if target_size > 0 => loop {
-            println!(
-                "calling bootstrap endpoint, addr {}",
-                format!("{}/raft/bootstrap", url)
-            );
-            match c
-                .post(&format!("{}/raft/bootstrap", url))
-                .insert_header(("node_id", id.to_string()))
-                .send()
-                .await
-            {
-                Ok(mut resp) if resp.status().is_success() => {
-                    println!("resp status {}", resp.status());
-                    let members: HashSet<u64> = resp.json().await.unwrap();
-                    let _ = node.initialize(members).await;
+        (Some(target_url), target_size) if target_size > 0 => {
+            loop {
+                match c
+                    .post(&format!("{}/raft/bootstrap", target_url))
+                    .header("x-ccfs-node-id", id.to_string())
+                    .send()
+                    .await
+                {
+                    Ok(resp) if resp.status().is_success() => {
+                        let members: HashSet<u64> = resp.json().await.unwrap();
+                        let _ = node.initialize(members).await;
+                        break;
+                    }
+                    _ => tokio::time::sleep(Duration::from_secs(1)).await,
+                }
+            }
+            loop {
+                connection = connect(
+                    wsc.clone(),
+                    format!("{}/raft/ws?bootstrap=true", target_url),
+                    id,
+                    Arc::clone(&node),
+                    address.clone(),
+                    cluster.clone(),
+                    connection,
+                )
+                .await;
+                if connection.is_some() {
                     break;
                 }
-                Ok(resp) => {
-                    println!("couldn't bootstrap cluster yet {:?}", read_body(resp).await);
-                    tokio::time::sleep(Duration::from_secs(1)).await;
-                }
-                Err(err) => {
-                    println!("couldn't bootstrap cluster yet {}", err);
-                    tokio::time::sleep(Duration::from_secs(1)).await;
-                }
+                tokio::time::sleep(Duration::from_secs(1)).await;
             }
-        },
+        }
         _ => {}
     }
-    let mut connection: Option<Addr<CCFSWsClient>> = None;
     loop {
-        tokio::time::sleep(Duration::from_secs(1)).await;
-        println!("{:?}", node.metrics());
-        if let Some(conn) = &connection {
-            if !conn.connected() {
-                connection = connect_to_leader(&c, id, &node, &address, cluster.clone()).await;
+        match c.get("http://envoy:10000/raft/leader").send().await {
+            Ok(resp) if resp.status().is_success() => {
+                connection = connect(
+                    wsc.clone(),
+                    format!("{}/raft/ws", resp.text().await.unwrap()),
+                    id,
+                    Arc::clone(&node),
+                    address.clone(),
+                    cluster.clone(),
+                    connection,
+                )
+                .await;
+                if connection.is_some() {
+                    let _ = update_ds(&c, &address).await;
+                }
             }
-        } else {
-            connection = connect_to_leader(&c, id, &node, &address, cluster.clone()).await;
+            _ => {}
         }
+        tokio::time::sleep(Duration::from_secs(1)).await;
     }
 }
 
-pub async fn connect_to_leader(
-    c: &Arc<Client>,
+pub async fn connect(
+    c: Arc<WsClient>,
+    url: String,
     id: u64,
-    node: &Arc<CCFSRaft>,
-    address: &str,
+    node: Arc<CCFSRaft>,
+    address: String,
     cluster: Addr<Cluster>,
+    connection: Option<Addr<CCFSWsClient>>,
 ) -> Option<Addr<CCFSWsClient>> {
-    match c.get("http://envoy:10000/api/servers").send().await {
-        Ok(resp) => println!("get servers resp: {:?}", read_body(resp).await),
-        Err(err) => println!("get servers err: {:?}", err),
-    };
-    match c
-        .ws("http://envoy:10000/raft/ws")
-        .header("node_id", id)
-        .connect()
-        .await
-    {
-        Ok((_resp, framed)) => {
-            let (sink, stream) = framed.split();
-            let addr = CCFSWsClient::create(|ctx| {
-                CCFSWsClient::add_stream(stream, ctx);
-                CCFSWsClient::new(
-                    id,
-                    address,
-                    SinkWrite::new(sink, ctx),
-                    Arc::clone(node),
-                    cluster,
-                )
-            });
-            return Some(addr);
-        }
-        Err(err) => {
-            println!("couldn't connect to cluster: {}", err);
-            // update ds
-            None
-        }
+    match connection {
+        Some(conn) if conn.connected() => Some(conn),
+        _ => match c.ws(url).header("x-ccfs-node-id", id).connect().await {
+            Ok((resp, framed)) => match get_header(resp.headers(), "x-ccfs-node-id") {
+                Ok(node_id) => {
+                    let peer_id = node_id.parse().unwrap();
+                    Some(CCFSWsClient::new(
+                        id, peer_id, &address, framed, node, cluster,
+                    ))
+                }
+                _ => None,
+            },
+            Err(err) => {
+                println!("couldn't connect to cluster: {:?}", err);
+                None
+            }
+        },
     }
 }

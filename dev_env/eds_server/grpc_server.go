@@ -32,9 +32,8 @@ import (
 var (
 	debug bool
 
-	port        uint
-	httpport    uint
-	gatewayPort uint
+	port     uint
+	httpport uint
 
 	mode string
 
@@ -149,14 +148,14 @@ func registerhendpoint(w http.ResponseWriter, r *http.Request) {
 
 	for _, b := range strSlice {
 		if b == key {
-			fmt.Fprint(w, fmt.Sprintf("%s already registered", key))
+			fmt.Fprintf(w, "%s already registered", key)
 			return
 		}
 	}
 
-	strSlice = []string{key}
+	strSlice = append(strSlice, key)
 	log.Println("strSlice %v", strSlice)
-	fmt.Fprint(w, fmt.Sprintf("%s ok", key))
+	fmt.Fprintf(w, "%s ok", key)
 }
 
 func deregisterhendpoint(w http.ResponseWriter, r *http.Request) {
@@ -176,7 +175,7 @@ func deregisterhendpoint(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	fmt.Fprint(w, fmt.Sprintf("%s ok", key))
+	fmt.Fprintf(w, "%s ok", key)
 }
 
 func main() {

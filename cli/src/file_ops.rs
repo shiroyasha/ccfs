@@ -1,26 +1,22 @@
 use crate::errors::*;
-use actix_web::body::BodyStream;
-use actix_web::client::{Client, ClientResponse};
-use actix_web::dev::{Decompress, Payload};
-use actix_web::http::header::CONTENT_TYPE;
-use ccfs_commons::http_utils::{create_ccfs_multipart, read_body};
+use ccfs_commons::http_utils::create_ccfs_multipart;
 use ccfs_commons::{errors, result::CCFSResult};
 use ccfs_commons::{Chunk, ChunkServer, FileInfo, FileMetadata, CHUNK_SIZE, CURR_DIR};
 use futures::future::join_all;
 use rand::{seq::SliceRandom, thread_rng};
+use reqwest::{Body, Client, Response};
 use serde::{de::DeserializeOwned, Serialize};
 use snafu::ResultExt;
 use std::collections::HashMap;
 use std::io::SeekFrom;
 use std::path::Path;
+use std::time::Instant;
 use tempfile::tempdir_in;
 use tokio::fs::{create_dir, remove_dir_all, rename, File};
 use tokio::io::{AsyncReadExt, AsyncSeekExt, AsyncWriteExt};
 use tokio_stream::StreamExt;
-use tokio_util::io::ReaderStream;
+use tokio_util::codec::{BytesCodec, FramedRead};
 use uuid::Uuid;
-
-type Response = ClientResponse<Decompress<Payload>>;
 
 pub async fn list(c: &Client, client_id: &Uuid, meta_url: &str) -> CCFSResult<()> {
     let file: FileMetadata =
@@ -87,7 +83,7 @@ pub async fn upload_item(
     let relative_path = path.strip_prefix(prefix).unwrap();
     let target_dir = relative_path.parent().unwrap().display();
     let upload_url = format!("{}/api/files/upload?path={}", meta_url, target_dir);
-    let mut resp = post_request(c, &upload_url, file_data, client_id).await?;
+    let resp = post_request(c, &upload_url, file_data, client_id).await?;
     let file: FileMetadata = resp.json().await.context(ParseJson)?;
     if let FileInfo::File { id, .. } = &file.file_info {
         upload_file(c, meta_url, id, chunks, path, client_id).await?;
@@ -140,16 +136,13 @@ pub async fn upload_chunk(
         f.seek(SeekFrom::Start(part as u64 * CHUNK_SIZE))
             .await
             .context(errors::Open { path })?;
-        let stream = ReaderStream::new(f.take(CHUNK_SIZE));
-        let mpart = create_ccfs_multipart(&chunk_id_str, &file_id_str, stream);
+        let stream = FramedRead::new(f.take(CHUNK_SIZE), BytesCodec::new());
+        let mpart = create_ccfs_multipart(&chunk_id_str, &file_id_str, Body::wrap_stream(stream));
         let url = format!("{}/api/upload", server.address);
         let resp = c
             .post(&url)
-            .insert_header((
-                CONTENT_TYPE,
-                format!("multipart/form-data; boundary={}", &mpart.get_boundary()),
-            ))
-            .send_body(BodyStream::new(Box::new(mpart)))
+            .multipart(mpart)
+            .send()
             .await
             .context(errors::FailedRequest { url })?;
         if resp.status().is_success() {
@@ -159,7 +152,7 @@ pub async fn upload_chunk(
             "failed to upload chunk {} to server {:?}\nreason: {:?}",
             chunk_id,
             server,
-            read_body(resp).await
+            resp.text().await
         );
     }
     Err(UploadSingleChunk { part, chunk_id }.build().into())
@@ -173,6 +166,7 @@ pub async fn download<T: AsRef<Path>>(
     target_path: Option<&Path>,
     force: bool,
 ) -> CCFSResult<()> {
+    let instant = Instant::now();
     // get chunks and merge them into a file
     let file_url = format!("{}/api/files?path={}", meta_url, path.as_ref().display());
     let file: FileMetadata = get_request_json(c, &file_url, client_id).await?;
@@ -207,7 +201,11 @@ pub async fn download<T: AsRef<Path>>(
     rename(&from, &to)
         .await
         .context(errors::Rename { from, to })?;
-    println!("Finished downloading `{}`", file.name);
+    println!(
+        "Finished downloading `{}` in {} ms",
+        file.name,
+        instant.elapsed().as_millis()
+    );
     Ok(())
 }
 
@@ -246,8 +244,9 @@ pub async fn download_file(
             return Err(SomeChunksNotAvailable.build().into());
         }
         for curr_chunk_id in chunks {
-            if let Some(mut payload) = responses.remove(curr_chunk_id) {
-                while let Some(Ok(mut bytes)) = payload.next().await {
+            if let Some(payload) = responses.remove(curr_chunk_id) {
+                let mut stream = payload.bytes_stream();
+                while let Some(Ok(mut bytes)) = stream.next().await {
                     file.write_buf(&mut bytes)
                         .await
                         .context(errors::Write { path })?;
@@ -280,14 +279,14 @@ pub async fn download_chunk(
 async fn get_request(c: &Client, url: &str, client_id: &Uuid) -> CCFSResult<Response> {
     let resp = c
         .get(url)
-        .insert_header(("x-ccfs-client-id", client_id.to_string()))
+        .header("x-ccfs-client-id", client_id.to_string())
         .send()
         .await
         .context(errors::FailedRequest { url })?;
     match resp.status().is_success() {
         true => Ok(resp),
         false => {
-            let response = read_body(resp).await?;
+            let response = resp.text().await.context(errors::ReadString)?;
             Err(errors::Unsuccessful { url, response }.build().into())
         }
     }
@@ -298,7 +297,7 @@ async fn get_request_json<T: DeserializeOwned>(
     url: &str,
     client_id: &Uuid,
 ) -> CCFSResult<T> {
-    let mut resp = get_request(c, url, client_id).await?;
+    let resp = get_request(c, url, client_id).await?;
     Ok(resp.json().await.context(ParseJson)?)
 }
 
@@ -310,14 +309,15 @@ async fn post_request<T: Serialize>(
 ) -> CCFSResult<Response> {
     let resp = c
         .post(url)
-        .insert_header(("x-ccfs-client-id", client_id.to_string()))
-        .send_json(&data)
+        .header("x-ccfs-client-id", client_id.to_string())
+        .json(&data)
+        .send()
         .await
         .context(errors::FailedRequest { url })?;
     match resp.status().is_success() {
         true => Ok(resp),
         false => {
-            let response = read_body(resp).await?;
+            let response = resp.text().await.context(errors::ReadString)?;
             Err(errors::Unsuccessful { url, response }.build().into())
         }
     }
