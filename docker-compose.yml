@@ -3,7 +3,9 @@ version: '3.9'
 #
 # This a development environment. It is running:
 #
-#  - A metadata server on port 4000.
+#  - A metadata server on port 4001.
+#  - A metadata server on port 4002.
+#  - A metadata server on port 4003.
 #
 #  - A chunk sever on port 5001.
 #  - A chunk sever on port 5002.
@@ -13,18 +15,73 @@ version: '3.9'
 #
 
 services:
+  envoy:
+    image: envoyproxy/envoy:v1.17.0
+    volumes:
+      - ./dev_env/envoy/envoy.yml:/etc/envoy/envoy.yaml
+    ports:
+      - 80:10000
+      - 8001:8001
 
-  meta_server:
+  eds:
+    build:
+      context: ./dev_env/eds_server
+      dockerfile: ./Dockerfile.dev
+    ports:
+      - 8080:8080
+      - 5000:5000
+    volumes:
+      - ./dev_env/eds_server:/app
+
+  #
+  # Three metadata servers.
+  #
+
+  meta_server_001:
     build:
       context: .
       dockerfile: ./metadata-server/Dockerfile.dev
     ports:
-      - "4000:4000"
+      - "4001:4001"
     volumes:
       - ./ccfs-commons:/app/ccfs-commons
       - ./metadata-server:/app/metadata-server
+      - ./dev_env/current_host:/app/current_host
     environment:
-      CONFIG_PATH: ./metadata-server/ms_config.yml
+      CONFIG_PATH: ./metadata-server/dev_configs/ms_config1.yml
+      BOOTSTRAP_SIZE: 3
+      BOOTSTRAP_URL: http://meta_server_001:4001
+
+  meta_server_002:
+    build:
+      context: .
+      dockerfile: ./metadata-server/Dockerfile.dev
+    ports:
+      - "4002:4002"
+    volumes:
+      - ./ccfs-commons:/app/ccfs-commons
+      - ./metadata-server:/app/metadata-server
+      - ./dev_env/current_host:/app/current_host
+    environment:
+      CONFIG_PATH: ./metadata-server/dev_configs/ms_config2.yml
+      BOOTSTRAP_SIZE: 3
+      BOOTSTRAP_URL: http://meta_server_001:4001
+
+  meta_server_003:
+    build:
+      context: .
+      dockerfile: ./metadata-server/Dockerfile.dev
+    ports:
+      - "4003:4003"
+    volumes:
+      - ./ccfs-commons:/app/ccfs-commons
+      - ./metadata-server:/app/metadata-server
+      - ./dev_env/current_host:/app/current_host
+    environment:
+      CONFIG_PATH: ./metadata-server/dev_configs/ms_config3.yml
+      BOOTSTRAP_SIZE: 3
+      BOOTSTRAP_URL: http://meta_server_001:4001
+
   #
   # Three chunk servers.
   #

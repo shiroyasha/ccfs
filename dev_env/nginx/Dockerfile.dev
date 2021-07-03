@@ -1,0 +1,8 @@
+FROM nginx:latest
+
+RUN apt-get update && RUNLEVEL=1 apt-get install incron \
+    && apt-get install coreutils \
+    && echo root >> /etc/incron.allow \
+    && echo "/current_host IN_MODIFY nginx -s reload" | incrontab -
+
+CMD service nginx start && service incron start && sleep infinity

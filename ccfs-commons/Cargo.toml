@@ -9,6 +9,7 @@ edition = "2018"
 [dependencies]
 actix-web = "4.0.0-beta.3"
 actix-multipart = "0.4.0-beta.2"
+reqwest = { version = "0.11", features = ["json"] }
 mpart-async = "0.5"
 tokio = { version = "1.1", features = ["full"] }
 tokio-util = { version = "0.6", features = ["io"] }
@@ -19,3 +20,4 @@ uuid = { version = "0.8", features = ["v4", "serde"] }
 snafu = "0.6"
 regex = "1.4"
 snafu-cli-debug = "0.1"
+pnet = "0.27"

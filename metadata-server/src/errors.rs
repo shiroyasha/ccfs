@@ -1,6 +1,9 @@
+use crate::raft::data::ClientRequest;
 use actix_web::error::{ErrorBadRequest, ErrorInternalServerError};
 use actix_web::{HttpResponse, ResponseError};
-use ccfs_commons::errors::CCFSResponseError;
+use async_raft::error::ClientReadError;
+use async_raft::ClientWriteError;
+use ccfs_commons::errors::{CCFSResponseError, Error as BaseError};
 use snafu::Snafu;
 
 #[derive(Debug, Snafu)]
@@ -19,6 +22,17 @@ pub enum Error {
 
     #[snafu(display("Missing required query param"))]
     MissingParam,
+
+    #[snafu(display("Couldn't process read request"))]
+    ClientRead { source: ClientReadError },
+
+    #[snafu(display("Couldn't process write request"))]
+    ClientWrite {
+        source: ClientWriteError<ClientRequest>,
+    },
+
+    #[snafu(display("Couldn't create websocket connection: {}", source))]
+    WsConnect { source: actix_web::Error },
 }
 
 impl<'a> ResponseError for Error {
@@ -28,14 +42,22 @@ impl<'a> ResponseError for Error {
         match self {
             Base { source } => source.error_response(),
             Deserialize { .. } | MissingParam { .. } => ErrorBadRequest(display).into(),
-            NotFound { .. } => ErrorInternalServerError(display).into(),
+            NotFound { .. } | ClientRead { .. } | ClientWrite { .. } | WsConnect { .. } => {
+                ErrorInternalServerError(display).into()
+            }
         }
     }
 }
 
+impl From<BaseError> for Error {
+    fn from(error: BaseError) -> Self {
+        Self::Base { source: error }
+    }
+}
+
 impl From<Error> for CCFSResponseError {
-    fn from(error: Error) -> CCFSResponseError {
-        CCFSResponseError {
+    fn from(error: Error) -> Self {
+        Self {
             inner: Box::new(error),
         }
     }

@@ -3,7 +3,7 @@ use crate::{BFSPathsIter, BFSTreeIter, DFSTreeIter, TreeNavigator, TreeZipper, R
 use chrono::serde::ts_nanoseconds;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashSet};
 use std::path::PathBuf;
 use uuid::Uuid;
 
@@ -204,7 +204,7 @@ pub enum FileInfo {
         size: u64,
         chunks: Vec<Uuid>,
         #[serde(default)]
-        num_of_completed_chunks: usize,
+        completed_chunks: HashSet<Uuid>,
         #[serde(default = "FileStatus::default")]
         status: FileStatus,
     },
@@ -215,7 +215,7 @@ impl FileInfo {
             id: Uuid::new_v4(),
             size,
             chunks,
-            num_of_completed_chunks: 0,
+            completed_chunks: HashSet::new(),
             status: FileStatus::Started,
         }
     }

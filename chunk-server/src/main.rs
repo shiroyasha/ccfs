@@ -1,4 +1,5 @@
 use actix_web::{web, App, HttpServer};
+use ccfs_commons::http_utils::get_ip;
 use chunk_server::jobs;
 use chunk_server::routes::{download, replicate, upload};
 use chunk_server::server_config::ServerConfig;
@@ -6,26 +7,6 @@ use std::env;
 use std::sync::Arc;
 use tokio::fs::create_dir_all;
 use tokio::task;
-
-#[cfg(target_os = "linux")]
-fn get_ip() -> Option<String> {
-    get_private_ip("eth0")
-}
-
-#[cfg(target_os = "macos")]
-fn get_ip() -> Option<String> {
-    get_private_ip("en0")
-}
-
-fn get_private_ip(target_name: &str) -> Option<String> {
-    let interfaces = pnet::datalink::interfaces();
-    interfaces.iter().find(|i| i.name == target_name).map(|i| {
-        i.ips
-            .iter()
-            .find(|ip| ip.is_ipv4())
-            .map(|ip| ip.ip().to_string())
-    })?
-}
 
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {

@@ -1,23 +1,24 @@
 use crate::server_config::ServerConfig;
-use actix_web::client::Client;
-use ccfs_commons::http_utils::read_body;
+use reqwest::Client;
 use std::sync::Arc;
 use tokio::time::{sleep, Duration};
 
 pub async fn start_ping_job(address: String, config: Arc<ServerConfig>) {
+    let meta_url = format!("{}/api/ping", config.metadata_url);
+    let server_id = config.server_id.to_string();
+    let client = Client::new();
     loop {
         // TODO: investigate why using a client initialize outside the loop occasionally gives `connector has been disconnected` error
-        let client = Client::new();
         let res = client
-            .post(&format!("{}/api/ping", config.metadata_url))
-            .insert_header(("x-ccfs-chunk-server-id", config.server_id.to_string()))
-            .insert_header(("x-ccfs-chunk-server-address", address.clone()))
+            .post(&meta_url)
+            .header("x-ccfs-chunk-server-id", &server_id)
+            .header("x-ccfs-chunk-server-address", &address)
             .send()
             .await;
         match res {
             Ok(s) => match s.status().is_success() {
                 true => println!("successfully pinged meta server"),
-                false => println!("ping failed: {:?}", read_body(s).await),
+                false => println!("ping failed: {:?}", s.text().await),
             },
             Err(err) => {
                 println!("ping failed: {}", err)
