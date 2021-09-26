@@ -70,8 +70,7 @@ where
                             Ok(req.into_response(
                                 HttpResponse::TemporaryRedirect()
                                     .insert_header((http::header::LOCATION, redirect_addr))
-                                    .finish()
-                                    .into_body(),
+                                    .finish(),
                             ))
                         }
                         _ => Err(error::ErrorInternalServerError(

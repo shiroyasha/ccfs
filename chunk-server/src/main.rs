@@ -1,3 +1,4 @@
+use actix_web::web::Data;
 use actix_web::{web, App, HttpServer};
 use ccfs_commons::http_utils::get_ip;
 use chunk_server::jobs;
@@ -25,9 +26,9 @@ async fn main() -> std::io::Result<()> {
     let address = config.address();
     HttpServer::new(move || {
         App::new()
-            .data(config.metadata_url.clone())
-            .data(config.server_id)
-            .data(config.upload_path.clone())
+            .app_data(Data::new(config.metadata_url.clone()))
+            .app_data(Data::new(config.server_id))
+            .app_data(Data::new(config.upload_path.clone()))
             .service(
                 web::scope("/api")
                     .service(upload)

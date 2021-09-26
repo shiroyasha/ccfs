@@ -33,14 +33,16 @@ impl Actor for CCFSWsClient {
             id: self.peer_id,
             addr: ctx.address().recipient(),
         });
-        self.conn.write(Message::Binary(
+        if let Err(message) = self.conn.write(Message::Binary(
             bincode::serialize(&RegisterAddress {
                 id: self.id,
                 address: self.address.clone(),
             })
             .expect("failed ws serialize")
             .into(),
-        ));
+        )) {
+            println!("failed to send message: {:?}", message);
+        }
     }
 
     fn stopping(&mut self, _: &mut Self::Context) -> Running {
@@ -94,7 +96,7 @@ impl CCFSWsClient {
                         println!("append request exec result client {:?}", res);
                         match res {
                             Ok(response) => {
-                                act.conn.write(Message::Binary(
+                                if let Err(message) = act.conn.write(Message::Binary(
                                     bincode::serialize(&ResponseMessage::Append(AppendResponse {
                                         id,
                                         req_id,
@@ -102,7 +104,9 @@ impl CCFSWsClient {
                                     }))
                                     .expect("cannot ser AppendResponse")
                                     .into(),
-                                ));
+                                )) {
+                                    println!("failed to write the response: {:?}", message);
+                                }
                             }
                             _ => println!("handle append_request failed"),
                         }
@@ -122,7 +126,7 @@ impl CCFSWsClient {
                     .then(move |res, act, _| {
                         match res {
                             Ok(response) => {
-                                act.conn.write(Message::Binary(
+                                if let Err(message) = act.conn.write(Message::Binary(
                                     bincode::serialize(&ResponseMessage::Snapshot(
                                         SnapshotResponse {
                                             id,
@@ -132,7 +136,9 @@ impl CCFSWsClient {
                                     ))
                                     .expect("cannot ser AppendResponse")
                                     .into(),
-                                ));
+                                )) {
+                                    println!("failed to send snapshot");
+                                }
                             }
                             _ => println!("handle snapshot_request failed"),
                         }
@@ -156,7 +162,9 @@ impl Handler<CCFSMessage> for CCFSWsClient {
             CCFSMessage::Register(res) => bincode::serialize(&res).expect("failed ws serialize"),
             CCFSMessage::UpdateAddrs(res) => bincode::serialize(&res).expect("failed ws serialize"),
         };
-        self.conn.write(Message::Binary(data.into()));
+        if let Err(message) = self.conn.write(Message::Binary(data.into())) {
+            println!("failed to write ws message in handle");
+        }
     }
 }
 

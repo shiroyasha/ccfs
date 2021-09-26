@@ -2,6 +2,7 @@ mod utils;
 
 use actix_http::http::StatusCode;
 use actix_web::test::{call_service, init_service};
+use actix_web::web::Data;
 use actix_web::{web, App};
 use ccfs_commons::chunk_name;
 use chunk_server::routes::upload;
@@ -30,9 +31,9 @@ async fn test_successful_upload() -> std::io::Result<()> {
     // setup chunk server mock
     let server = init_service(
         App::new()
-            .data(server_config.metadata_url.clone())
-            .data(server_config.server_id)
-            .data(server_config.upload_path.clone())
+            .app_data(Data::new(server_config.metadata_url.clone()))
+            .app_data(Data::new(server_config.server_id))
+            .app_data(Data::new(server_config.upload_path.clone()))
             .service(web::scope("/api").service(upload)),
     )
     .await;
@@ -68,9 +69,9 @@ async fn test_meta_fail() -> std::io::Result<()> {
     // setup chunk server mock
     let server = init_service(
         App::new()
-            .data(server_config.metadata_url.clone())
-            .data(server_config.server_id)
-            .data(server_config.upload_path.clone())
+            .app_data(Data::new(server_config.metadata_url.clone()))
+            .app_data(Data::new(server_config.server_id))
+            .app_data(Data::new(server_config.upload_path.clone()))
             .service(web::scope("/api").service(upload)),
     )
     .await;
@@ -102,9 +103,9 @@ async fn test_missing_form_data() -> std::io::Result<()> {
     // setup chunk server mock
     let server = init_service(
         App::new()
-            .data(server_config.metadata_url.clone())
-            .data(server_config.server_id)
-            .data(server_config.upload_path.clone())
+            .app_data(Data::new(server_config.metadata_url.clone()))
+            .app_data(Data::new(server_config.server_id))
+            .app_data(Data::new(server_config.upload_path.clone()))
             .service(web::scope("/api").service(upload)),
     )
     .await;
@@ -114,6 +115,6 @@ async fn test_missing_form_data() -> std::io::Result<()> {
     assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
     upload_mock.assert_hits(0);
 
-    assert_eq!(is_empty(temp.path()).await?, true);
+    assert!(is_empty(temp.path()).await?);
     Ok(())
 }

@@ -88,7 +88,7 @@ pub async fn upload_item(
     if let FileInfo::File { id, .. } = &file.file_info {
         upload_file(c, meta_url, id, chunks, path, client_id).await?;
     }
-    return Ok(());
+    Ok(())
 }
 
 fn generate_chunk_ids(size: u64) -> Vec<Uuid> {
@@ -194,7 +194,7 @@ pub async fn download<T: AsRef<Path>>(
                 .await
                 .context(errors::Create { path: curr_path })?;
         } else {
-            download_file(c, meta_url, &curr_f, &curr_dir, client_id).await?;
+            download_file(c, meta_url, curr_f, &curr_dir, client_id).await?;
         }
     }
 

@@ -7,7 +7,6 @@ use chunk_server::server_config::ServerConfig;
 use futures_util::future::poll_fn;
 use mpart_async::client::MultipartRequest;
 use std::path::Path;
-use std::pin::Pin;
 use tokio::fs::read_dir;
 use tokio_util::io::ReaderStream;
 use uuid::Uuid;
@@ -37,7 +36,7 @@ pub async fn create_multipart_request(
     let bytes = match body {
         Body::Message(mut b) => {
             let mut res = BytesMut::new();
-            while let Some(Ok(bytes)) = poll_fn(|cx| Pin::new(b.as_mut()).poll_next(cx)).await {
+            while let Some(Ok(bytes)) = poll_fn(|cx| b.as_pin_mut().poll_next(cx)).await {
                 res.extend(bytes);
             }
             Bytes::from(res)

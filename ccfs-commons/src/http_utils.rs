@@ -55,7 +55,7 @@ pub fn get_header<'a>(headers: &'a HeaderMap, key: &'a str) -> Result<&'a str, E
 
 pub fn create_ccfs_multipart(chunk_id: &str, file_id: &str, stream: Body) -> Form {
     let file_part = Part::stream(stream)
-        .file_name(chunk_name(&file_id, &chunk_id))
+        .file_name(chunk_name(file_id, chunk_id))
         .mime_str("application/octet-stream")
         .unwrap();
     Form::new()

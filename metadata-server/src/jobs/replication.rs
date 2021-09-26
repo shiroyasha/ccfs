@@ -93,7 +93,7 @@ async fn replicate_file(
                             servers,
                             &replica_servers,
                             &target_server_candidates,
-                            &id,
+                            id,
                             chunk,
                             required_replicas,
                         )

@@ -1,4 +1,5 @@
 use actix::*;
+use actix_web::web::Data;
 use actix_web::{web, App, HttpServer};
 use async_raft::Config;
 use metadata_server::middleware::RedirectToLeader;
@@ -82,13 +83,13 @@ async fn main() -> std::io::Result<()> {
     let address = config.address();
     HttpServer::new(move || {
         App::new()
-            .data(chunk_servers.clone())
-            .data(raft_node.clone())
-            .data(storage.clone())
-            .data(cluster.clone())
-            .data(config.clone())
-            .data(bootstrap_cluster_nodes.clone())
-            .data(bootstrap_size)
+            .app_data(Data::new(chunk_servers.clone()))
+            .app_data(Data::new(raft_node.clone()))
+            .app_data(Data::new(storage.clone()))
+            .app_data(Data::new(cluster.clone()))
+            .app_data(Data::new(config.clone()))
+            .app_data(Data::new(bootstrap_cluster_nodes.clone()))
+            .app_data(Data::new(bootstrap_size))
             .service(
                 web::scope("/api")
                     .wrap(RedirectToLeader)

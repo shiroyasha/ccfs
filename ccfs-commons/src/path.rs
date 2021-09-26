@@ -94,7 +94,7 @@ pub fn parse_path(path: &str) -> CCFSResult<SplitTerminator<char>> {
 /// }
 /// ```
 pub fn evaluate_path(curr_dir: &str, tree: &FileMetadata, path: &str) -> CCFSResult<String> {
-    let mut segments = parse_path(&path)?.peekable();
+    let mut segments = parse_path(path)?.peekable();
     let mut nav = tree.navigate();
     let first = segments.next().unwrap();
     if !first.is_empty() {

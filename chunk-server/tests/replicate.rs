@@ -2,6 +2,7 @@ mod utils;
 
 use actix_http::http::StatusCode;
 use actix_web::test::{call_service, init_service, TestRequest};
+use actix_web::web::Data;
 use actix_web::{web, App};
 use ccfs_commons::chunk_name;
 use chunk_server::routes::replicate;
@@ -26,7 +27,7 @@ async fn test_successful_replication() -> std::io::Result<()> {
     // setup chunk server mock
     let server = init_service(
         App::new()
-            .data(server_config.upload_path.clone())
+            .app_data(Data::new(server_config.upload_path.clone()))
             .service(web::scope("/api").service(replicate)),
     )
     .await;
@@ -68,7 +69,7 @@ async fn test_chunk2_failed() -> std::io::Result<()> {
     // setup chunk server mock
     let server = init_service(
         App::new()
-            .data(server_config.upload_path.clone())
+            .app_data(Data::new(server_config.upload_path.clone()))
             .service(web::scope("/api").service(replicate)),
     )
     .await;
@@ -110,7 +111,7 @@ async fn test_missing_form_data() -> std::io::Result<()> {
     // setup chunk server mock
     let server = init_service(
         App::new()
-            .data(server_config.upload_path.clone())
+            .app_data(Data::new(server_config.upload_path.clone()))
             .service(web::scope("/api").service(replicate)),
     )
     .await;
@@ -143,7 +144,7 @@ async fn test_missing_file() -> std::io::Result<()> {
     // setup chunk server mock
     let server = init_service(
         App::new()
-            .data(server_config.upload_path.clone())
+            .app_data(Data::new(server_config.upload_path.clone()))
             .service(web::scope("/api").service(replicate)),
     )
     .await;

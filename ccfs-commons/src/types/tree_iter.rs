@@ -49,7 +49,7 @@ impl<'a> Iterator for DFSTreeIter<'a> {
                 if let FileInfo::Directory { ref children } = item.file_info {
                     self.items.extend(children.values().rev());
                 }
-                Some(&item)
+                Some(item)
             }
             None => None,
         }
@@ -104,7 +104,7 @@ impl<'a> Iterator for BFSTreeIter<'a> {
                 if let FileInfo::Directory { ref children } = item.file_info {
                     self.items.extend(children.values());
                 }
-                Some(&item)
+                Some(item)
             }
             None => None,
         }
