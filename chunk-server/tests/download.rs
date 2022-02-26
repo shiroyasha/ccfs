@@ -1,9 +1,9 @@
 mod utils;
 
+use actix_web::web::Data;
 use actix_web::{test, web, App};
 use ccfs_commons::chunk_name;
 use chunk_server::routes::download;
-use futures_util::stream::TryStreamExt;
 use std::sync::Arc;
 use tempfile::tempdir;
 use test::{call_service, init_service, TestRequest};
@@ -25,7 +25,7 @@ async fn test_download() -> std::io::Result<()> {
     // setup chunk server mock
     let server = init_service(
         App::new()
-            .data(server_config.upload_path.clone())
+            .app_data(Data::new(server_config.upload_path.clone()))
             .service(web::scope("/api").service(download)),
     )
     .await;
@@ -33,10 +33,10 @@ async fn test_download() -> std::io::Result<()> {
     let req = TestRequest::get()
         .uri(&format!("/api/download/{}", chunk_file_name))
         .to_request();
-    let mut resp = call_service(&server, req).await;
+    let resp = call_service(&server, req).await;
     assert!(resp.status().is_success());
 
-    let bytes = test::load_stream(resp.take_body().into_stream()).await;
+    let bytes = test::load_body(resp.into_body()).await;
     assert_eq!(
         bytes.unwrap(),
         web::Bytes::from_static(b"Test file content")

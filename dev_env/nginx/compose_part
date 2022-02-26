@@ -1,0 +1,12 @@
+nginx:
+    build:
+      context: .
+      dockerfile: ./dev_env/nginx/Dockerfile.dev
+    volumes:
+      - ./dev_env/nginx/nginx.conf:/etc/nginx/nginx.conf
+      - ./dev_env/nginx/error.log:/etc/nginx/error_log.log
+      - ./dev_env/nginx/cache/:/etc/nginx/cache
+      - ./dev_env/nginx:/usr/share/nginx/wwwroot
+      - ./dev_env/current_host:/current_host
+    ports:
+      - 80:80

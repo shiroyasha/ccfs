@@ -1,15 +1,16 @@
 mod errors;
 mod file_ops;
 
-use actix_web::client::Client;
-use ccfs_commons::errors::{CCFSResponseError, Error as BaseError};
+use ccfs_commons::errors::{self as base, CCFSResponseError};
 use errors::*;
 use file_ops::{download, list, tree, upload};
+use reqwest::Client;
 use snafu::ResultExt;
 use std::collections::HashMap;
 use std::path::PathBuf;
 use structopt::StructOpt;
 use tokio::fs::read_to_string;
+use uuid::Uuid;
 
 #[derive(Debug, StructOpt)]
 /// Chop-Chop File System
@@ -55,12 +56,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         return Err(FileNotExist { path }.build().into());
     }
     if path.is_dir() {
-        return Err(BaseError::NotAFile { path }.into());
+        return Err(base::NotAFile { path }.build().into());
     }
 
-    let content = read_to_string(&path)
-        .await
-        .map_err(|source| BaseError::Read { path, source })?;
+    let content = read_to_string(&path).await.context(base::Read { path })?;
     let config_map: HashMap<String, String> = serde_yaml::from_str(&content).context(ParseYaml)?;
     let key = "metadata-server-url";
     let meta_url = config_map
@@ -68,14 +67,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .ok_or_else(|| CCFSResponseError::from(MissingConfigVal { key }.build()))?;
 
     let client = Client::new();
+    let client_id = Uuid::new_v4();
     match opts.cmd {
-        Command::Upload { file_path } => upload(&client, &meta_url, &file_path).await?,
+        Command::Upload { file_path } => upload(&client, &client_id, meta_url, &file_path).await?,
         Command::Download { file_path } => {
-            download(&client, &meta_url, &file_path, None, false).await?
+            download(&client, &client_id, meta_url, &file_path, None, false).await?
         }
         Command::Remove { file_path: _path } => unimplemented!(),
-        Command::List => list(&client, &meta_url).await?,
-        Command::Tree => tree(&client, &meta_url).await?,
+        Command::List => list(&client, &client_id, meta_url).await?,
+        Command::Tree => tree(&client, &client_id, meta_url).await?,
     };
     Ok(())
 }

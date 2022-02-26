@@ -1,0 +1,19 @@
+FROM golang:1.15 as build
+
+ENV GO111MODULE=on
+
+WORKDIR /app
+
+COPY go.mod .
+COPY go.sum .
+
+RUN go mod download
+
+COPY . .
+
+RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build grpc_server.go
+
+FROM debian:buster
+COPY --from=build /app/grpc_server /
+
+ENTRYPOINT ["/grpc_server"]

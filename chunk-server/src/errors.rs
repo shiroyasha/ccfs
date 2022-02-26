@@ -1,22 +1,19 @@
 use actix_web::error::{ErrorBadRequest, ErrorInternalServerError};
 use actix_web::{HttpResponse, ResponseError};
-use ccfs_commons::errors::CCFSResponseError;
+use ccfs_commons::errors::{CCFSResponseError, Error as BaseError};
 use snafu::Snafu;
 
 #[derive(Debug, Snafu)]
 #[snafu(visibility = "pub")]
 pub enum Error {
     #[snafu(display("{}", source))]
-    Base { source: ccfs_commons::errors::Error },
+    Base { source: BaseError },
 
     #[snafu(display("Communication error with metadata server: {}", reason))]
     MetaServerCommunication { reason: String },
 
     #[snafu(display("Missing some form parts"))]
     MissingPart,
-
-    #[snafu(display("Missing some headers"))]
-    MissingHeader,
 
     #[snafu(display("Cannot create temp dir"))]
     TempDir { source: std::io::Error },
@@ -31,14 +28,20 @@ impl ResponseError for Error {
             MetaServerCommunication { .. } | TempDir { .. } => {
                 ErrorInternalServerError(display).into()
             }
-            MissingPart | MissingHeader => ErrorBadRequest(display).into(),
+            MissingPart => ErrorBadRequest(display).into(),
         }
     }
 }
 
+impl From<BaseError> for Error {
+    fn from(error: BaseError) -> Self {
+        Self::Base { source: error }
+    }
+}
+
 impl From<Error> for CCFSResponseError {
-    fn from(error: Error) -> CCFSResponseError {
-        CCFSResponseError {
+    fn from(error: Error) -> Self {
+        Self {
             inner: Box::new(error),
         }
     }
